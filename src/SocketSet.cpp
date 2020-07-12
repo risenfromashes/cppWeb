@@ -1,57 +1,43 @@
 #include "SocketSet.h"
 
 namespace cW {
-void SocketSet::add(Socket* socket) { sockets.push_back(socket); }
-void SocketSet::add(SOCKET socket, const std::string& ip, Server* server)
+void SocketSet::add(Socket* socket)
 {
-    sockets.push_back(new Socket(socket, ip, server));
+
+    std::scoped_lock lock(socketSetLock);
+    sockets.push_back(socket);
 }
 
 SocketSet::SocketSet() { receiveBuffer = (char*)malloc(sizeof(char) * receiveBufferSize); }
 
 void SocketSet::selectSockets()
 {
-    // timeout of maximum 100us
-    static TIMEVAL* timeout = new TIMEVAL{0, 100};
+    std::scoped_lock lock(socketSetLock);
     if (!sockets.empty()) {
-        FD_ZERO(&writeFds);
-        FD_ZERO(&readFds);
-
         for (int i = 0; i < sockets.size(); i++) {
-            FD_SET(sockets[i]->socket_handle, &readFds);
-            FD_SET(sockets[i]->socket_handle, &writeFds);
-        }
-        int result = select(0, &readFds, &writeFds, nullptr, timeout);
-        if (result == SOCKET_ERROR) {
-            std::cout << "Selecting in SocketSet failed with error " << WSAGetLastError() << "."
-                      << std::endl;
-        }
-        else if (result > 0) {
-            for (int i = 0; i < sockets.size(); i++) {
-                sockets[i]->onAwake();
-                if (FD_ISSET(sockets[i]->socket_handle, &readFds)) {
-                    sockets[i]->receive(receiveBuffer, receiveBufferSize);
-                }
-                // if there is left-over data, call onData
-                else if (!sockets[i]->receivedData.empty())
-                    sockets[i]->onData();
-                if (FD_ISSET(sockets[i]->socket_handle, &writeFds)) sockets[i]->onWritable();
-                if (sockets[i]->shouldUpgrade()) {
-                    switch (sockets[i]->upgrade()) {
-                        case UpgradeSocket::HTTPSOCKET:
-                            sockets[i] = new HttpSocket(sockets[i]);
-                            break;
-                        case UpgradeSocket::WEBSOCKET: sockets[i] = new WsSocket(sockets[i]); break;
-                        default: break;
-                    }
-                }
+            if (!sockets[i]->connected || (sockets[i]->timeout + sockets[i]->last_active <=
+                                           std::chrono::steady_clock::now())) {
+                delete sockets[i];
+                sockets.erase(sockets.begin() + i);
+                if (sockets.empty()) return;
+                continue;
             }
-            for (int i = 0; i < sockets.size(); i++) {
-                if (!sockets[i]->connected) {
-                    delete sockets[i];
-                    sockets.erase(sockets.begin() + i);
-                }
-            }
+        }
+        for (int i = 0; i < sockets.size(); i++) {
+            // Clock::printElapsed("Running socket read/write loop. " +
+            //                     std::to_string(sockets.size()));
+            sockets[i]->onAwake();
+            sockets[i]->receive(receiveBuffer, receiveBufferSize);
+            sockets[i]->onWritable();
+
+            // if (sockets[i]->shouldUpgrade()) {
+            //     switch (sockets[i]->upgrade()) {
+            //         case UpgradeSocket::HTTPSOCKET: sockets[i] = new HttpSocket(sockets[i]);
+            //         break; case UpgradeSocket::WEBSOCKET: sockets[i] = new WsSocket(sockets[i]);
+            //         break; default: break;
+            //     }
+            // }
+            sockets[i]->onAwake();
         }
     }
 }

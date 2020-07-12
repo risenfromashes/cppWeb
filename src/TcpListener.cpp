@@ -26,7 +26,6 @@ TcpListener::TcpListener(unsigned short port)
     hints.ai_family   = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-
     char* error_message;
     if (error_message = createListenSocket(
             local_host_socket, nullptr, port_str, hints, local_host_addr, "local host")) {
@@ -40,6 +39,11 @@ TcpListener::TcpListener(unsigned short port)
         WSACleanup();
         throw TcpListenerError(error_message, WSAGetLastError());
     }
+
+    static unsigned long enabled = 1;
+    // make non-blocking
+    ioctlsocket(local_host_socket, FIONBIO, &enabled);
+    ioctlsocket(lan_socket, FIONBIO, &enabled);
 };
 
 TcpListener::TcpListener(unsigned short port, Server* server) : TcpListener(port)
@@ -52,7 +56,7 @@ void TcpListener::listenOnce(TIMEVAL* timeout)
     FD_ZERO(&fds);
     FD_SET(local_host_socket, &fds);
     FD_SET(lan_socket, &fds);
-    int activity = select(0, &fds, nullptr, nullptr, timeout);
+    int activity = select(0, &fds, nullptr, nullptr, nullptr);
     if (activity > 0) {
         if (FD_ISSET(local_host_socket, &fds)) acceptSocket(local_host_socket);
         if (FD_ISSET(lan_socket, &fds)) acceptSocket(lan_socket);
@@ -73,6 +77,7 @@ TcpListener::~TcpListener() { close(); }
 
 inline void TcpListener::socketHandler(SOCKET Socket, std::string ip)
 {
+    cW::Clock::start();
     if (server) { server->handleSocket(Socket, ip); }
     else if (handler)
         handler(Socket, ip);
@@ -95,13 +100,15 @@ inline void TcpListener::socketHandler(SOCKET Socket, std::string ip)
 
 inline void TcpListener::acceptSocket(const SOCKET& socket_handle)
 {
-    SOCKET      Socket = INVALID_SOCKET;
-    sockaddr_in clientaddr;
-    int         clientaddrlen = sizeof(clientaddr);
-    char        ip[16];
+    std::cout << "Accepted socket" << std::endl;
+    static char        ip[16];
+    static sockaddr_in clientaddr;
+    static int         clientaddrlen = sizeof(clientaddr);
+    SOCKET             Socket        = INVALID_SOCKET;
     if ((Socket = accept(socket_handle, (sockaddr*)&clientaddr, &clientaddrlen)) ==
         INVALID_SOCKET) {
-        std::cout << "Accept failed with error " << WSAGetLastError() << std::endl;
+        if (int error = WSAGetLastError(); error != WSAEWOULDBLOCK)
+            std::cout << "Accept failed with error " << error << std::endl;
     }
     else {
         inet_ntop(AF_INET, &clientaddr.sin_addr, ip, 16);

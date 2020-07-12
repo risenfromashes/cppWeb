@@ -15,15 +15,24 @@ HttpResponse* HttpResponse::onAborted(AbortHandler&& handler)
 
 void HttpResponse::write(std::string_view data, size_t contentSize)
 {
-    writeBuffer       = data;
-    this->contentSize = contentSize;
+    buffer      = data;
+    contentSize = contentSize;
+    if (!wroteContentLength) {
+        setHeader("Content-Length", std::to_string(this->contentSize));
+        wroteContentLength = true;
+    }
 }
 
 void HttpResponse::send(std::string_view data)
 {
+    this->contentSize = data.size();
+    if (!wroteContentLength) {
+        setHeader("Content-Length", std::to_string(this->contentSize));
+        wroteContentLength = true;
+    }
     onWritableCallback = [this, data](size_t offset) {
         if (offset < data.size())
-            writeBuffer = std::string_view(data.data(), data.size() - offset);
+            buffer = std::string_view(data.data(), data.size() - offset);
         else
             closeSocket = true;
     };

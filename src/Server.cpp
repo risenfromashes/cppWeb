@@ -69,7 +69,11 @@ Server&& Server::message(WsHandler&& handler)
     return std::move(*this);
 }
 
-void Server::handleSocket(SOCKET socket, const std::string& ip) { sockets->add(socket, ip, this); }
+void Server::handleSocket(SOCKET socket, const std::string& ip)
+{
+    Clock::printElapsed("Adding socket to set.");
+    sockets->add(new HttpSocket(socket, ip, this));
+}
 
 Server&& Server::listen(unsigned short port)
 {
@@ -85,14 +89,23 @@ Server&& Server::listen(unsigned short port)
 
 Server&& Server::run()
 {
-    static TIMEVAL timeout = {0, 100};
+    static TIMEVAL timeout = {0, 100000};
+    listenerThread         = std::thread([this] {
+        while (true) {
+            for (size_t i = 0; i < listeners.size(); i++)
+                listeners[i]->listenOnce(&timeout);
+        }
+    });
     while (true) {
         sockets->selectSockets();
-        for (size_t i = 0; i < listeners.size(); i++)
-            listeners[i]->listenOnce(&timeout);
+        std::this_thread::sleep_for(std::chrono::nanoseconds(10));
     }
     return std::move(*this);
 }
 
-Server::~Server() { delete sockets; }
+Server::~Server()
+{
+    if (listenerThread.joinable()) listenerThread.join();
+    delete sockets;
+}
 }; // namespace cW

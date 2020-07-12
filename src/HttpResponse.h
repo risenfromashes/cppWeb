@@ -21,7 +21,9 @@ class HttpResponse {
 
     HttpStatus::Code statusCode = HttpStatus::OK;
 
-    std::string_view writeBuffer;
+    std::string_view buffer;
+
+    bool wroteContentLength = false;
 
     size_t contentSize;
 

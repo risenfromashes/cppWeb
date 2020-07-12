@@ -3,11 +3,11 @@
 
 namespace cW {
 
-Router::HttpRoute::HttpRoute(const std::string& regexp,
+Router::HttpRoute::HttpRoute(const std::string& url,
                              HttpMethod         method,
                              HttpHandler&&      handler,
                              UrlParams*         params)
-    : re_expression(regexp), method(method), handler(std::move(handler)), params(params)
+    : url(url), method(method), handler(std::move(handler)), params(params)
 {
 }
 Router::HttpRoute::~HttpRoute() { delete params; }
@@ -37,20 +37,14 @@ void Router::addWsHandler(std::string&& route, WsEvent event, WsHandler&& handle
 
 void Router::dispatch(HttpRequest* request, HttpResponse* response)
 {
-    std::cout << "Router route size: " << httpRoutes.size() << std::endl
-              << "First route method: " << httpRoutes[0]->method << std::endl;
     for (size_t i = 0; i < httpRoutes.size(); i++) {
-        if (httpRoutes[i]->method == request->method &&
-            ((httpRoutes[i]->params->count() == 0 &&
-              RE2::FullMatch(request->absolutePath, httpRoutes[i]->re_expression)) ||
-             (RE2::FullMatchN(request->absolutePath,
-                              httpRoutes[i]->re_expression,
-                              httpRoutes[i]->params->getArgs(),
-                              httpRoutes[i]->params->count())))) {
-            request->params = Params(*httpRoutes[i]->params);
+        if (httpRoutes[i]->method == request->method && httpRoutes[i]->url == request->url) {
+            // request->params = Params(*httpRoutes[i]->params);
             httpRoutes[i]->handler(request, response);
+            return;
         }
     }
+    response->end();
 }
 
 void Router::dispatch(WsEvent event, WebSocket* ws)

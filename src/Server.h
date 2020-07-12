@@ -1,6 +1,7 @@
 #ifndef __CW_SERVER_H_
 #define __CW_SERVER_H_
 
+#include <thread>
 #include "TcpListener.h"
 #include "Router.h"
 
@@ -18,6 +19,8 @@ class Server {
     SocketSet* sockets;
 
     std::vector<TcpListener*> listeners;
+
+    std::thread listenerThread;
 
     void setActiveWsRoute(const char* route);
 

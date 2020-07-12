@@ -4,10 +4,20 @@
 #include <cstring>
 #include <cassert>
 #include <string>
+#include <chrono>
 
 namespace cW {
 
 #define __INF__ static_cast<size_t>(-1)
+
+class Clock {
+    static std::chrono::steady_clock::time_point start_time;
+
+  public:
+    static void start();
+    static void reset();
+    static void printElapsed(const std::string& message, bool reset = false);
+};
 
 // returns string of zeros and ones as binary data
 template <typename T>

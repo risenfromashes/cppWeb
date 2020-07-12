@@ -15,8 +15,22 @@ HttpRequest::HttpRequest(const std::string& receivedData)
 {
     re2::StringPiece input(receivedData);
     std::string      headerName, headerValue;
-    std::string      methodStr, url;
-    RE2::FindAndConsume(&input, re_statusLine, &methodStr, &url);
+    std::string      methodStr;
+
+    auto first_space  = receivedData.find(' ');
+    auto second_space = receivedData.find(' ', first_space + 1);
+    methodStr         = receivedData.substr(0, first_space);
+    url               = receivedData.substr(first_space + 1, second_space - first_space - 1);
+    absolutePath      = url;
+    auto doubleSlash  = url.find("//");
+    if (doubleSlash == std::string::npos)
+        absolutePath = url.substr(url.find('/'));
+    else {
+        if (auto slash = url.find('/', doubleSlash + 2); slash != std::string::npos)
+            absolutePath = url.substr(slash);
+        else
+            absolutePath = "/";
+    }
 
     if (methodStr == "GET")
         method = HttpMethod::GET;
@@ -29,16 +43,15 @@ HttpRequest::HttpRequest(const std::string& receivedData)
     else if (methodStr == "HEAD")
         method = HttpMethod::HEAD;
 
-    if (!RE2::PartialMatch(url, re_absolutePath, &absolutePath)) absolutePath = "/";
-
-    re2::StringPiece queries_str;
-    std::string      key, val;
-    if (RE2::PartialMatch(url, re_queries, &queries_str)) {
-        while (RE2::FindAndConsume(&queries_str, re_query, &key, &val))
-            queries.insert({key, val});
-    }
-    while (RE2::FindAndConsume(&input, re_headerField, &headerName, &headerValue))
-        headers.insert({headerName, headerValue});
+    // TODO: Parse headers and queries
+    // re2::StringPiece queries_str;
+    // std::string      key, val;
+    // if (RE2::PartialMatch(url, re_queries, &queries_str)) {
+    //     while (RE2::FindAndConsume(&queries_str, re_query, &key, &val))
+    //         queries.insert({key, val});
+    // }
+    // while (RE2::FindAndConsume(&input, re_headerField, &headerName, &headerValue))
+    //     headers.insert({headerName, headerValue});
 }
 
 // callback for more data

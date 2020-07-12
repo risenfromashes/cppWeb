@@ -1,9 +1,9 @@
 #ifndef __CW_SOCKET_SET_H_
 #define __CW_SOCKET_SET_H_
 
+#include <mutex>
 #include "HttpSocket.h"
 #include "WsSocket.h"
-
 namespace cW {
 // a number of client sockets to be managed by the same thread
 class SocketSet {
@@ -12,11 +12,12 @@ class SocketSet {
     fd_set               writeFds, readFds;
     std::vector<Socket*> sockets;
 
+    std::mutex socketSetLock;
+
     char*            receiveBuffer;
     static const int receiveBufferSize = 512 * 1024;
 
     void add(Socket* socket);
-    void add(SOCKET socket, const std::string& ip, Server* server);
 
     SocketSet();
 

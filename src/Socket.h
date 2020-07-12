@@ -28,6 +28,12 @@ class Socket {
   protected:
     Server* server;
 
+    const static RE2 ws_upgrade_header_field_re;
+
+    std::chrono::steady_clock::time_point last_active;
+
+    const static std::chrono::steady_clock::duration timeout;
+
     SOCKET socket_handle;
 
     static const int writeSize;
@@ -36,9 +42,10 @@ class Socket {
     std::string ip;
     size_t      id;
 
-    bool connected = true;
-
+    bool connected   = true;
     bool dataPending = true;
+
+    bool upgraded = false;
     // stores unwritten data
     std::string writeBuffer;
     std::string receivedData;

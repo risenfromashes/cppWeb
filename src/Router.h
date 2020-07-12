@@ -16,11 +16,11 @@ typedef std::function<void(WebSocket*)>                      WsHandler;
 
 class Router {
     struct HttpRoute {
-        RE2         re_expression;
+        std::string url;
         HttpMethod  method;
         HttpHandler handler;
         UrlParams*  params;
-        HttpRoute(const std::string& regexp,
+        HttpRoute(const std::string& url,
                   HttpMethod         method,
                   HttpHandler&&      handler,
                   UrlParams*         params);

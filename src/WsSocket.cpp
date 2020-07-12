@@ -5,6 +5,7 @@ namespace cW {
 WsSocket::WsSocket(Socket* socket)
     : Socket(socket), webSocket(new WebSocket(new HttpRequest(receivedData)))
 {
+    upgraded = true;
 }
 bool WsSocket::shouldUpgrade() { return false; }
 
