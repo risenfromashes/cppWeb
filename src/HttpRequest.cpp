@@ -3,87 +3,89 @@
 
 namespace cW {
 
-const RE2 HttpRequest::re_statusLine("([A-Z]{3,}) ([^ ]+) HTTP/1.\\d");
-const RE2 HttpRequest::re_absolutePath("[^:/](/[^/ ?]*)");
-
-const RE2 HttpRequest::re_queries("\\?(.*)");
-const RE2 HttpRequest::re_query("(\\w+)=([^&]+)");
-
-const RE2 HttpRequest::re_headerField("\\s*(\\S+)\\s*:[ ]*([^\r\n]*)\r\n");
-
-HttpRequest::HttpRequest(const std::string& receivedData)
+bool HttpRequest::HeaderComp::operator()(const std::string_view& a, const std::string_view& b)
 {
-    re2::StringPiece input(receivedData);
-    std::string      headerName, headerValue;
-    std::string      methodStr;
-
-    auto first_space  = receivedData.find(' ');
-    auto second_space = receivedData.find(' ', first_space + 1);
-    methodStr         = receivedData.substr(0, first_space);
-    url               = receivedData.substr(first_space + 1, second_space - first_space - 1);
-    absolutePath      = url;
-    auto doubleSlash  = url.find("//");
-    if (doubleSlash == std::string::npos)
-        absolutePath = url.substr(url.find('/'));
-    else {
-        if (auto slash = url.find('/', doubleSlash + 2); slash != std::string::npos)
-            absolutePath = url.substr(slash);
-        else
-            absolutePath = "/";
+    size_t i     = 0;
+    size_t a_len = a.size(), b_len = b.size();
+    while (true) {
+        if (tolower(a[i]) < tolower(b[i])) return true;
+        if (tolower(a[i]) > tolower(b[i])) return false;
+        i++;
+        if (i == a_len || a[i] == ' ' || a[i] == ':') {
+            if (i == b_len || b[i] == ' ' || b[i] == ':')
+                return false; // equal
+            else
+                return true; // a shorter
+        }
+        else if (i == b_len || b[i] == ' ' || b[i] == ':')
+            return false; // b shorter
     }
+}
 
-    if (methodStr == "GET")
+bool HttpRequest::QueryComp::operator()(const std::string_view& a, const std::string_view& b)
+{
+    size_t i     = 0;
+    size_t a_len = a.size(), b_len = b.size();
+    while (true) {
+        if (a[i] < b[i]) return true;
+        if (a[i] > b[i]) return false;
+        i++;
+        if (i == a_len || a[i] == '=') {
+            if (i == b_len || b[i] == '=')
+                return false; // equal
+            else
+                return true; // a shorter
+        }
+        else if (i == b_len || b[i] == '=')
+            return false; // b shorter
+    }
+}
+
+HttpRequest::HttpRequest(const std::string& requestHeader)
+{
+    std::string_view _method;
+    auto             first_space  = requestHeader.find(' ');
+    auto             second_space = requestHeader.find(' ', first_space + 1);
+    _method                       = requestHeader.substr(0, first_space);
+
+    if (_method == "GET")
         method = HttpMethod::GET;
-    else if (methodStr == "POST")
+    else if (_method == "POST")
         method = HttpMethod::POST;
-    else if (methodStr == "PUT")
+    else if (_method == "PUT")
         method = HttpMethod::PUT;
-    else if (methodStr == "DELETE")
+    else if (_method == "DELETE")
         method = HttpMethod::DEL;
-    else if (methodStr == "HEAD")
+    else if (_method == "HEAD")
         method = HttpMethod::HEAD;
 
-    // TODO: Parse headers and queries
-    // re2::StringPiece queries_str;
-    // std::string      key, val;
-    // if (RE2::PartialMatch(url, re_queries, &queries_str)) {
-    //     while (RE2::FindAndConsume(&queries_str, re_query, &key, &val))
-    //         queries.insert({key, val});
-    // }
-    // while (RE2::FindAndConsume(&input, re_headerField, &headerName, &headerValue))
-    //     headers.insert({headerName, headerValue});
+    url           = requestHeader.substr(first_space + 1, second_space - first_space - 1);
+    size_t offset = 0;
+    if (auto doubleSlash = url.find("://"); doubleSlash != std::string::npos)
+        offset = doubleSlash + 3;
+    size_t queryStart = url.find('?');
+    if (auto slash = url.find('/', offset); slash != std::string::npos)
+        absolutePath = url.substr(slash, queryStart - slash);
+    else
+        absolutePath = "/";
+
+    querySection  = url.substr(queryStart + 1);
+    headerSection = requestHeader.substr(requestHeader.find("\r\n") + 2);
 }
 
 // callback for more data
-void HttpRequest::onData(DataHandler&& onDataCallback)
+HttpRequest* HttpRequest::onData(DataHandler&& onDataCallback)
 {
     this->onBodyCallback = nullptr;
     this->onDataCallback = std::move(onDataCallback);
+    return this;
 }
 // callback for full request body
-void HttpRequest::onBody(DataHandler&& onBodyCallback)
+HttpRequest* HttpRequest::onBody(DataHandler&& onBodyCallback)
 {
     this->onDataCallback = nullptr;
     this->onBodyCallback = std::move(onBodyCallback);
+    return this;
 }
 
-std::string_view HttpRequest::getHeader(const std::string& name)
-{
-    std::map<std::string, std::string>::iterator itr;
-    if ((itr = headers.find(name)) != headers.end()) return itr->second;
-    return std::string_view(nullptr, 0);
-}
-
-std::string_view HttpRequest::getQuery(const std::string& key)
-{
-    std::map<std::string, std::string>::iterator itr;
-    if ((itr = queries.find(key)) != queries.end()) return itr->second;
-    return std::string_view(nullptr, 0);
-}
-
-template <typename T>
-const T& HttpRequest::getParam(const std::string& key)
-{
-    return params.get<T>(key);
-}
 }; // namespace cW

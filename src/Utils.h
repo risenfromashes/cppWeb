@@ -19,6 +19,48 @@ class Clock {
     static void printElapsed(const std::string& message, bool reset = false);
 };
 
+constexpr size_t count_char(const char* str, size_t size = std::string::npos, char c = '\0')
+{
+    size_t res = 0;
+    for (size_t i = 0; i < size; i++) {
+        if (str[i] == '\0') break;
+        if (c == '\0' || str[i] == c) res++;
+    }
+    return res;
+}
+
+constexpr bool is_digit(char ch) { return '0' <= ch && ch <= '9'; }
+
+constexpr char to_lower(char ch) { return ch | 32; }
+
+constexpr uint16_t from_hex(char hexCh)
+{
+    return is_digit(hexCh) ? hexCh - '0' : to_lower(hexCh) - 'a' + 10;
+}
+
+template <bool rightLowerCase = false>
+constexpr bool ci_match(const std::string& a, const std::string& b)
+{
+    size_t size;
+    if (size = a.size() != b.size()) return false;
+    if constexpr (rightLowerCase) {
+        for (size_t i = 0; i < size; i++)
+            if (to_lower(a[i]) != b[i]) return false;
+    }
+    else {
+        for (size_t i = 0; i < size; i++)
+            if (to_lower(a[i]) != to_lower(b[i])) return false;
+    }
+    return true;
+}
+
+inline bool contains(const std::string& str, const char* pattern)
+{
+    return str.find(pattern) != std::string::npos;
+}
+
+char* url_decode(const char* str, size_t size = 0);
+
 // returns string of zeros and ones as binary data
 template <typename T>
 T* asBinary(const char* str)

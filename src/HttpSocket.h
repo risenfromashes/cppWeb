@@ -3,33 +3,33 @@
 
 #include "HttpRequest.h"
 #include "HttpResponse.h"
-#include "Socket.h"
-#include "Server.h"
+#include "ClientSocket.h"
 
 namespace cW {
 
-class HttpSocket : public Socket {
-    friend class SocketSet;
+struct HttpSocket : public ClientSocket {
     friend class Server;
+    friend class Poll;
 
   private:
     HttpResponse* response;
     HttpRequest*  request;
     bool          wroteHeader = false;
-
-    bool gotHeader = false;
-
-    size_t writeOffset = 0;
-    // constructs the socket from parent and delete it afterwards
-    HttpSocket(Socket* socket);
-    HttpSocket(SOCKET socket_handle, const std::string& ip, Server* server);
+    // request header need to last for the life time of the connection
+    std::string requestHeader;
+    int64_t     requestContentLength = -1;
+    size_t      responseHeaderLength = 0;
+    bool        gotHeader            = false;
+    bool        writing              = false;
+    HttpSocket(ClientSocket* socket);
+    void tryDispatch();
+    void badRequest();
 
   public:
-    void onAwake() override;
+    void loopPreCb() override;
+    void loopPostCb() override;
     void onData() override;
-    void onWritable() override;
-    bool shouldUpgrade();
-
+    bool onWritable() override;
     ~HttpSocket();
 };
 

@@ -1,15 +1,7 @@
 #include "Server.h"
-#include "SocketSet.h"
 
 namespace cW {
-Server::Server() { sockets = new SocketSet(); }
-
-void Server::setActiveWsRoute(const char* route)
-{
-    auto size     = strlen(route);
-    activeWsRoute = (char*)malloc(size);
-    memcpy_s(activeWsRoute, size, route, size);
-}
+Server::Server() {}
 
 Server&& Server::get(const char* route, HttpHandler&& handler)
 {
@@ -38,7 +30,7 @@ Server&& Server::head(const char* route, HttpHandler&& handler)
 }
 Server&& Server::open(const char* route, WsHandler&& handler)
 {
-    setActiveWsRoute(route);
+    activeWsRoute = route;
     router.addWsHandler(route, WsEvent::OPEN, std::move(handler));
     return std::move(*this);
 }
@@ -69,43 +61,28 @@ Server&& Server::message(WsHandler&& handler)
     return std::move(*this);
 }
 
-void Server::handleSocket(SOCKET socket, const std::string& ip)
-{
-    Clock::printElapsed("Adding socket to set.");
-    sockets->add(new HttpSocket(socket, ip, this));
-}
-
 Server&& Server::listen(unsigned short port)
 {
-    try {
-        listeners.push_back(new TcpListener(port, this));
-    }
-    catch (TcpListenerError& error) {
-        std::cout << error.what() << std::endl;
-        std::cout << "Failed to listen on port " << port << std::endl;
-    }
+    ports.push_back(port);
     return std::move(*this);
 }
 
-Server&& Server::run()
+Server&& Server::listen(std::initializer_list<short> ports)
 {
-    static TIMEVAL timeout = {0, 100000};
-    listenerThread         = std::thread([this] {
-        while (true) {
-            for (size_t i = 0; i < listeners.size(); i++)
-                listeners[i]->listenOnce(&timeout);
-        }
-    });
-    while (true) {
-        sockets->selectSockets();
-        std::this_thread::sleep_for(std::chrono::nanoseconds(10));
-    }
+    this->ports.insert(this->ports.end(), ports.begin(), ports.end());
     return std::move(*this);
 }
 
-Server::~Server()
+Server&& Server::run(int nThreads)
 {
-    if (listenerThread.joinable()) listenerThread.join();
-    delete sockets;
+    if (nThreads < 0) nThreads = std::thread::hardware_concurrency();
+    std::vector<std::unique_ptr<std::thread>> threads;
+    for (int i = 0; i < nThreads; i++)
+        threads.push_back(std::make_unique<std::thread>([this] {
+
+        }));
+    return std::move(*this);
 }
+
+Server::~Server() {}
 }; // namespace cW

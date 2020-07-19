@@ -40,29 +40,30 @@ class WebSocket {
 
   public:
     template <typename T>
-    T getRequestParam(const std::string& key);
+        requires std::is_arithmetic_v<T> || std::is_convertible_v<std::string, T> inline const T
+                                            getRequestParam(const std::string_view& key)
+    {
+        return httpRequest->getParam<T>(key);
+    }
 
-    inline std::string_view getRequestHeader(const std::string& name);
-    inline std::string_view getRequestQuery(const std::string& query);
+    template <typename T>
+        requires std::is_arithmetic_v<T> ||
+        std::is_convertible_v<std::string_view, T> inline const T
+        getRequestHeader(const std::string_view& name)
+    {
+        return httpRequest->getHeader<T>(name);
+    }
+    template <typename T>
+        requires std::is_arithmetic_v<T> ||
+        std::is_convertible_v<std::string, T> const T getRequestQuery(const std::string_view& key)
+    {
+        return httpRequest->getQuery<T>(key);
+    }
     inline const WsMessage& getMessage();
     inline void             sendMessage(WsOpcode opcode, const char* data, size_t size);
 
     ~WebSocket();
 };
-
-template <typename T>
-T WebSocket::getRequestParam(const std::string& key)
-{
-    return httpRequest->getParam<T>(key);
-}
-std::string_view WebSocket::getRequestHeader(const std::string& name)
-{
-    return httpRequest->getHeader(name);
-}
-std::string_view WebSocket::getRequestQuery(const std::string& query)
-{
-    httpRequest->getQuery(query);
-}
 
 const WsMessage& WebSocket::getMessage() { return *currentMessage; }
 void             WebSocket::sendMessage(WsOpcode opcode, const char* data, size_t size)

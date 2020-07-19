@@ -13,41 +13,32 @@ HttpResponse* HttpResponse::onAborted(AbortHandler&& handler)
     return this;
 }
 
-void HttpResponse::write(std::string_view data, size_t contentSize)
+void HttpResponse::write(const std::string_view& data, size_t contentSize)
 {
     buffer      = data;
     contentSize = contentSize;
-    if (!wroteContentLength) {
-        setHeader("Content-Length", std::to_string(this->contentSize));
+    if (contentSize < __INF__ && !wroteContentLength) {
+        setHeader("Content-Length", this->contentSize);
         wroteContentLength = true;
     }
 }
 
-void HttpResponse::send(std::string_view data)
+void HttpResponse::send(const std::string& data)
 {
+    assert(!onWritableCallback && "Cannot attach write handler and then send data");
     this->contentSize = data.size();
     if (!wroteContentLength) {
-        setHeader("Content-Length", std::to_string(this->contentSize));
+        setHeader("Content-Length", this->contentSize);
         wroteContentLength = true;
     }
-    onWritableCallback = [this, data](size_t offset) {
-        if (offset < data.size())
-            buffer = std::string_view(data.data(), data.size() - offset);
-        else
-            closeSocket = true;
-    };
+    sendBuffer = data;
+    buffer     = sendBuffer;
 }
-
 HttpResponse* HttpResponse::setStatus(HttpStatus::Code statusCode)
 {
     this->statusCode = statusCode;
     return this;
 }
-HttpResponse* HttpResponse::setHeader(const std::string& name, const std::string& value)
-{
-    headers.insert({name, value});
-    return this;
-}
-void HttpResponse::end() { closeSocket = true; }
+void HttpResponse::end() { close = true; }
 
 }; // namespace cW

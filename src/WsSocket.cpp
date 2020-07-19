@@ -2,27 +2,26 @@
 
 namespace cW {
 
-WsSocket::WsSocket(Socket* socket)
-    : Socket(socket), webSocket(new WebSocket(new HttpRequest(receivedData)))
+WsSocket::WsSocket(ClientSocket* other)
+    : ClientSocket(other), webSocket(new WebSocket(new HttpRequest(receiveBuffer)))
 {
     upgraded = true;
 }
-bool WsSocket::shouldUpgrade() { return false; }
 
 //[shouldCancel, complete]
 std::pair<bool, bool> WsSocket::parseFrame()
 {
     WsFrame* frame;
     if (!framePending) {
-        if (receivedData.size() < 2) return {false, false};
+        if (receiveBuffer.size() < 2) return {false, false};
 
         // creating new frame
-        char* data = receivedData.data();
+        char* data = receiveBuffer.data();
         frame      = (WsFrame*)malloc(sizeof(WsFrame));
 
         static_assert(sizeof(WsFrame::header) == 2, "Frame header size is larger than two bytes");
 
-        memcpy_s(&(frame->header), 2, data, 2);
+        std::memcpy(&(frame->header), data, 2);
 
         if (!frame->header.mask) return {true, false};
 
@@ -30,7 +29,7 @@ std::pair<bool, bool> WsSocket::parseFrame()
         if (frame->header.payloadLenShort == 126) {
             headerLength += 2;
             uint16_t length;
-            memcpy_s(&length, 2, data + 2, 2);
+            std::memcpy(&length, data + 2, 2);
             reverseByteOrder(&length);
             frame->payloadLength = (uint64_t)length;
         }
@@ -108,9 +107,9 @@ void WsSocket::formatFrames(const char* payload, size_t payloadLength, WsOpcode 
     frame->size = headerLength + framePayloadSize;
     frame->data = (char*)malloc(frame->size);
 
-    memcpy_s(frame->data, frame->size, &header, 2);
+    std::memcpy(frame->data, &header, 2);
     if (extendedLenSize) {
-        memcpy_s(frame->data + 2, frame->size, extendedLen, extendedLenSize);
+        std::memcpy(frame->data + 2, extendedLen, extendedLenSize);
         free(extendedLen);
     }
     memcpy_s(frame->data + headerLength, frame->size, &header, framePayloadSize);

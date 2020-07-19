@@ -6,46 +6,33 @@
 #include "HttpRequest.h"
 #include "HttpResponse.h"
 #include "WebSocket.h"
-#include "UrlParams.h"
 
 namespace cW {
-class WsSocket;
 
 typedef std::function<void(HttpRequest* req, HttpResponse*)> HttpHandler;
 typedef std::function<void(WebSocket*)>                      WsHandler;
 
 class Router {
     struct HttpRoute {
-        std::string url;
         HttpMethod  method;
         HttpHandler handler;
-        UrlParams*  params;
-        HttpRoute(const std::string& url,
-                  HttpMethod         method,
-                  HttpHandler&&      handler,
-                  UrlParams*         params);
-        ~HttpRoute();
+        UrlPath     path;
     };
 
     struct WsRoute {
-        RE2        re_expression;
-        WsEvent    event;
-        WsHandler  handler;
-        UrlParams* params;
-        WsRoute(const std::string& regexp, WsEvent event, WsHandler&& handler, UrlParams* params);
-        ~WsRoute();
+        WsEvent   event;
+        WsHandler handler;
+        UrlPath   path;
     };
 
-    std::vector<HttpRoute*> httpRoutes;
-    std::vector<WsRoute*>   wsRoutes;
-
-    static UrlParams* parseUrlParams(std::string urlPattern);
+    std::vector<HttpRoute> httpRoutes;
+    std::vector<WsRoute>   wsRoutes;
 
   public:
     void addHttpHandler(const char* route, HttpMethod method, HttpHandler&& handler);
-    void addWsHandler(std::string&& route, WsEvent event, WsHandler&& handler);
-    void dispatch(HttpRequest* request, HttpResponse* response);
-    void dispatch(WsEvent event, WebSocket* ws);
+    void addWsHandler(const char* route, WsEvent event, WsHandler&& handler);
+    void dispatch(HttpRequest* request, HttpResponse* response) const;
+    void dispatch(WsEvent event, WebSocket* ws) const;
     ~Router();
 };
 

@@ -1,1 +1,4 @@
 out/
+build/
+test_resources/
+*.cpp

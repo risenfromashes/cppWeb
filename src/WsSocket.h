@@ -2,7 +2,7 @@
 #define __CW_WEB_SOCKET_FRAME_H_
 
 #include <queue>
-#include "Socket.h"
+#include "ClientSocket.h"
 #include "Server.h"
 #include "WebSocket.h"
 #include "Utils.h"
@@ -28,9 +28,10 @@
 
 namespace cW {
 
-class WsSocket : public Socket {
+class WsSocket : public ClientSocket {
 
-    friend class SocketSet;
+    friend class Poll;
+
     struct WsSocketOpts {
         size_t MaxPayloadLength = __INF__;
     };
@@ -73,9 +74,7 @@ class WsSocket : public Socket {
 
     size_t writeOffset = 0;
 
-    WsSocket(Socket* socket);
-
-    bool shouldUpgrade() override;
+    WsSocket(ClientSocket* socket);
 
     //[shouldCancel, complete]
     std::pair<bool, bool> parseFrame();
@@ -91,7 +90,10 @@ class WsSocket : public Socket {
     ~WsSocket();
 
     // receives and writes one message at a time
-    void onWritable() override;
+    void loopPreCb() override;
+    void loopPostCb() override;
+    void onAborted() override;
+    bool onWritable() override;
     void onData() override;
 };
 
