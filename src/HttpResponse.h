@@ -27,12 +27,14 @@ class HttpResponse {
 
     bool wroteContentLength = false;
 
-    size_t contentSize;
+    size_t contentSize = __INF__;
 
     std::multimap<std::string, std::string> headers;
 
+    HttpResponse();
+
   public:
-    template <typename T = std::string>
+    template <typename T>
         requires std::is_convertible_v<T, std::string> || requires(T a)
     {
         std::to_string(a);
@@ -44,7 +46,13 @@ class HttpResponse {
     void          end();
     HttpResponse* onAborted(AbortHandler&& handler);
     HttpResponse* onWritable(WriteHandler&& handler);
+    inline bool   headerSet(const std::string& name);
 };
+
+bool HttpResponse::headerSet(const std::string& name)
+{
+    return headers.find(name) != headers.end();
+}
 
 template <typename T>
     requires std::is_convertible_v<T, std::string> || requires(T a)
@@ -53,11 +61,18 @@ template <typename T>
 }
 HttpResponse* HttpResponse::setHeader(const std::string& name, const T& value)
 {
-    if (ci_match<true>(name, "content-length")) wroteContentLength = true;
-    if constexpr (std::is_convertible_v<T, std::string>)
-        headers.insert({name, value});
-    else
-        headers.insert({name, std::to_string(value)});
+    std::string key = to_lower(name);
+    if (key == "connection") {
+        if constexpr (std::is_convertible_v<T, std::string>)
+            headers.find("connection")->second = value;
+    }
+    else {
+        if (key == "content-length") wroteContentLength = true;
+        if constexpr (std::is_convertible_v<T, std::string>)
+            headers.insert({key, value});
+        else
+            headers.insert({key, std::to_string(value)});
+    }
     return this;
 }
 }; // namespace cW

@@ -19,10 +19,10 @@ class HttpRequest {
     friend class Router;
 
     struct HeaderComp {
-        bool operator()(const std::string_view& a, const std::string_view& b);
+        bool operator()(const std::string_view& a, const std::string_view& b) const;
     };
     struct QueryComp {
-        bool operator()(const std::string_view& a, const std::string_view& b);
+        bool operator()(const std::string_view& a, const std::string_view& b) const;
     };
 
     HttpMethod       method;
@@ -46,9 +46,10 @@ class HttpRequest {
     DataHandler                                   onBodyCallback = nullptr;
 
     // only to be initialized when the headers have been fully received
-    HttpRequest(const std::string& receivedData);
+    HttpRequest(const std::string_view& receivedData);
 
   public:
+    ~HttpRequest();
     // callback for more data
     HttpRequest* onData(DataHandler&& onDataCallback);
     // callback for full request body

@@ -33,6 +33,15 @@ constexpr bool is_digit(char ch) { return '0' <= ch && ch <= '9'; }
 
 constexpr char to_lower(char ch) { return ch | 32; }
 
+inline std::string to_lower(const std::string& str)
+{
+    std::string ret;
+    ret.resize(str.size());
+    for (size_t i = 0; i < str.size(); i++)
+        ret[i] = to_lower(str[i]);
+    return ret;
+}
+
 constexpr uint16_t from_hex(char hexCh)
 {
     return is_digit(hexCh) ? hexCh - '0' : to_lower(hexCh) - 'a' + 10;

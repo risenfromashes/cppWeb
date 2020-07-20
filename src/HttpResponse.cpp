@@ -2,6 +2,9 @@
 #include <iostream>
 
 namespace cW {
+
+HttpResponse::HttpResponse() { headers.insert({"Connection", "close"}); }
+
 HttpResponse* HttpResponse::onWritable(WriteHandler&& handler)
 {
     onWritableCallback = std::move(handler);
@@ -17,7 +20,7 @@ void HttpResponse::write(const std::string_view& data, size_t contentSize)
 {
     buffer      = data;
     contentSize = contentSize;
-    if (contentSize < __INF__ && !wroteContentLength) {
+    if (!wroteContentLength && contentSize < __INF__) {
         setHeader("Content-Length", this->contentSize);
         wroteContentLength = true;
     }

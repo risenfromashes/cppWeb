@@ -22,19 +22,18 @@ endif(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
 
 FILE(GLOB src_files "src/*.h" "src/*.cpp")
 
-# add_executable(cpp_web main.cpp ${src_files})
-add_executable(cpp_web 
-# _main.cpp
-_linux.cpp
-#_iocp.cpp
-${src_files}
-)
-target_include_directories(cpp_web PRIVATE ${include_dir} 
-# ${RAPIDJSON_INCLUDE_DIRS}
-)
-target_link_libraries(cpp_web PRIVATE ${ws2_lib} 
-# OpenSSL::Crypto CURL::libcurl
-)
+add_library(cppWeb SHARED ${src_files})
+
+
+add_executable(main _linux.cpp)
+target_link_libraries(main cppWeb)
+
+# target_include_directories(cpp_web PRIVATE ${include_dir} 
+# # ${RAPIDJSON_INCLUDE_DIRS}
+# )
+# target_link_libraries(cpp_web PRIVATE ${ws2_lib} 
+# # OpenSSL::Crypto CURL::libcurl
+# )
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

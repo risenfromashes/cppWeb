@@ -88,12 +88,12 @@ class WsSocket : public ClientSocket {
 
   public:
     ~WsSocket();
-
     // receives and writes one message at a time
+
     void loopPreCb() override;
-    void loopPostCb() override;
+    // void loopPostCb() override;
     void onAborted() override;
-    bool onWritable() override;
+    void onWritable() override;
     void onData() override;
 };
 

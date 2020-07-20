@@ -31,8 +31,6 @@ class ClientSocket : Socket {
 
     const static std::chrono::steady_clock::duration timeout;
 
-    SOCKET fd;
-
     static const int MaxWriteSize;
     static size_t    socketCount;
 
@@ -43,17 +41,15 @@ class ClientSocket : Socket {
     size_t      id;
 
     bool upgraded = false;
-    // stores unwritten data
+
+    /* writeBuffer is only to be used for must be written data that the socket owns*/
     std::string writeBuffer;
     std::string receiveBuffer;
-    // actual writeOffset
-    size_t writeOffset  = 0;
-    size_t bufferOffset = 0;
-    bool   lastWrite    = false;
-
     // move from another pointer
     ClientSocket(ClientSocket* socket);
     static ClientSocket* from(ListenSocket* listenSocket, const Server* server);
+
+    int write(const char* data, size_t size, bool final);
 
   public:
     ClientSocket(SOCKET fd, const char* ip, const Server* server);
@@ -69,7 +65,7 @@ class ClientSocket : Socket {
     virtual void loopPreCb();
     virtual void loopPostCb();
     virtual void onData();
-    virtual bool onWritable();
+    virtual void onWritable();
     virtual void onAborted();
 
   private:

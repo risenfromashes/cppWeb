@@ -1,5 +1,7 @@
 #include "Server.h"
-
+#include "Poll.h"
+#include "ListenSocket.h"
+#include <iostream>
 namespace cW {
 Server::Server() {}
 
@@ -79,8 +81,14 @@ Server&& Server::run(int nThreads)
     std::vector<std::unique_ptr<std::thread>> threads;
     for (int i = 0; i < nThreads; i++)
         threads.push_back(std::make_unique<std::thread>([this] {
-
+            Poll poll(this);
+            for (auto port : ports) {
+                poll.add(ListenSocket::create("::", port));
+            }
+            poll.runLoop();
         }));
+    for (int i = 0; i < nThreads; i++)
+        if (threads[i]->joinable()) threads[i]->join();
     return std::move(*this);
 }
 

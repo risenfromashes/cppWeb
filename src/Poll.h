@@ -33,8 +33,6 @@ class Poll {
 
     void runLoop(int nThreads = 1);
 };
-
-const unsigned int Poll::bufferSize = 512 * 1024;
 }; // namespace cW
 
 #endif

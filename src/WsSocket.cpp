@@ -36,30 +36,30 @@ std::pair<bool, bool> WsSocket::parseFrame()
         else if (frame->header.payloadLenShort == 127) {
             headerLength += 8;
             uint64_t length;
-            memcpy_s(&length, 8, data + 2, 8);
+            std::memcpy(&length, data + 2, 8);
             reverseByteOrder(&length);
             frame->payloadLength = (uint64_t)length;
         }
         else
             frame->payloadLength = (uint64_t)frame->header.payloadLenShort;
 
-        memcpy_s(&(frame->mask[0]), 4, data + headerLength, 4);
+        std::memcpy(&(frame->mask[0]), data + headerLength, 4);
 
         currentFrame = frame;
         framePending = true;
         // removing header part
-        receivedData = receivedData.substr(headerLength + 4);
+        receiveBuffer = receiveBuffer.substr(headerLength + 4);
     }
     else
         frame = currentFrame;
 
     auto payloadLength = frame->payloadLength;
-    if (receivedData.size() >= payloadLength) {
-        char* data = receivedData.data();
+    if (receiveBuffer.size() >= payloadLength) {
+        char* data = receiveBuffer.data();
         unMask((uint8_t*)data, payloadLength, frame->mask);
         payloadBuffer.append(data, payloadLength);
-        receivedData = receivedData.substr(payloadLength);
-        framePending = false;
+        receiveBuffer = receiveBuffer.substr(payloadLength);
+        framePending  = false;
         return {false, currentFrame->header.fin == 1};
     }
     return {false, false};
@@ -112,7 +112,7 @@ void WsSocket::formatFrames(const char* payload, size_t payloadLength, WsOpcode 
         std::memcpy(frame->data + 2, extendedLen, extendedLenSize);
         free(extendedLen);
     }
-    memcpy_s(frame->data + headerLength, frame->size, &header, framePayloadSize);
+    std::memcpy(frame->data + headerLength, &header, framePayloadSize);
 
     queuedFrames.push(frame);
     if (!last)
@@ -132,8 +132,7 @@ WsSocket::~WsSocket()
     }
 }
 
-// receives and writes one message at a time
-void WsSocket::onWritable()
+void WsSocket::loopPreCb()
 {
     while (!webSocket->queuedMessages.empty()) {
         auto&& message = webSocket->queuedMessages.front();
@@ -141,14 +140,18 @@ void WsSocket::onWritable()
         delete message;
         queuedFrames.pop();
     }
+}
+
+// receives and writes one message at a time
+void WsSocket::onWritable()
+{
     if (!queuedFrames.empty()) {
         auto&& frame   = queuedFrames.front();
         int    toWrite = (int)(frame->size - writeOffset);
-        writeOffset += write(
-            frame->data + writeOffset, toWrite, queuedFrames.size() == 1 && (toWrite <= writeSize));
+        writeOffset += write(frame->data + writeOffset, toWrite, queuedFrames.size() == 1);
         assert(writeOffset <= frame->size && "How did write exceed frame size?");
         if (writeOffset == frame->size) {
-            if (frame->opcode == WsOpcode::Close) close();
+            if (frame->opcode == WsOpcode::Close) disconnect();
             freeFrame(frame);
             queuedFrames.pop();
             writeOffset = 0;
@@ -158,7 +161,7 @@ void WsSocket::onWritable()
 void WsSocket::onData()
 {
     auto [shouldClose, complete] = parseFrame();
-    if (shouldClose) return close();
+    if (shouldClose) return disconnect();
     if (complete) {
         webSocket->currentMessage = new WsMessage((WsOpcode)currentFrame->header.opcode,
                                                   payloadBuffer.c_str(),
@@ -188,4 +191,12 @@ void WsSocket::onData()
         webSocket->currentMessage = nullptr;
     }
 }
+
+void WsSocket::onAborted()
+{
+    // unexpected shutdown
+    // TODO: add an abort event handler
+    // server->dispatch(WsEvent::CLOSE, )
+}
+
 }; // namespace cW

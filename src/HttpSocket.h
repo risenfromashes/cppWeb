@@ -17,19 +17,20 @@ struct HttpSocket : public ClientSocket {
     bool          wroteHeader = false;
     // request header need to last for the life time of the connection
     std::string requestHeader;
-    int64_t     requestContentLength = -1;
-    size_t      responseHeaderLength = 0;
-    bool        gotHeader            = false;
-    bool        writing              = false;
+    // these are signed to prevent large numbers on  unsigned substraction
+    int64_t requestContentLength = -1;
+    int64_t responseHeaderLength = 0;
+    int64_t writeOffset          = 0;
+    bool    writing              = false;
     HttpSocket(ClientSocket* socket);
-    void tryDispatch();
+    void dispatch();
     void badRequest();
 
   public:
     void loopPreCb() override;
     void loopPostCb() override;
     void onData() override;
-    bool onWritable() override;
+    void onWritable() override;
     ~HttpSocket();
 };
 

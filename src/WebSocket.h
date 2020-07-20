@@ -60,7 +60,7 @@ class WebSocket {
         return httpRequest->getQuery<T>(key);
     }
     inline const WsMessage& getMessage();
-    inline void             sendMessage(WsOpcode opcode, const char* data, size_t size);
+    inline void             sendMessage(WsOpcode opcode, const char* data, size_t size = 0);
 
     ~WebSocket();
 };

@@ -25,8 +25,8 @@ class Router {
         UrlPath   path;
     };
 
-    std::vector<HttpRoute> httpRoutes;
-    std::vector<WsRoute>   wsRoutes;
+    std::vector<HttpRoute*> httpRoutes;
+    std::vector<WsRoute*>   wsRoutes;
 
   public:
     void addHttpHandler(const char* route, HttpMethod method, HttpHandler&& handler);

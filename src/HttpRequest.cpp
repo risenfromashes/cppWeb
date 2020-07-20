@@ -3,7 +3,7 @@
 
 namespace cW {
 
-bool HttpRequest::HeaderComp::operator()(const std::string_view& a, const std::string_view& b)
+bool HttpRequest::HeaderComp::operator()(const std::string_view& a, const std::string_view& b) const
 {
     size_t i     = 0;
     size_t a_len = a.size(), b_len = b.size();
@@ -22,7 +22,7 @@ bool HttpRequest::HeaderComp::operator()(const std::string_view& a, const std::s
     }
 }
 
-bool HttpRequest::QueryComp::operator()(const std::string_view& a, const std::string_view& b)
+bool HttpRequest::QueryComp::operator()(const std::string_view& a, const std::string_view& b) const
 {
     size_t i     = 0;
     size_t a_len = a.size(), b_len = b.size();
@@ -41,7 +41,7 @@ bool HttpRequest::QueryComp::operator()(const std::string_view& a, const std::st
     }
 }
 
-HttpRequest::HttpRequest(const std::string& requestHeader)
+HttpRequest::HttpRequest(const std::string_view& requestHeader)
 {
     std::string_view _method;
     auto             first_space  = requestHeader.find(' ');
@@ -69,8 +69,9 @@ HttpRequest::HttpRequest(const std::string& requestHeader)
     else
         absolutePath = "/";
 
-    querySection  = url.substr(queryStart + 1);
-    headerSection = requestHeader.substr(requestHeader.find("\r\n") + 2);
+    size_t statusLineEnd = requestHeader.find("\r\n") + 2;
+    querySection         = (queryStart == std::string_view::npos) ? "" : url.substr(queryStart + 1);
+    headerSection        = requestHeader.substr(statusLineEnd);
 }
 
 // callback for more data
@@ -86,6 +87,13 @@ HttpRequest* HttpRequest::onBody(DataHandler&& onBodyCallback)
     this->onDataCallback = nullptr;
     this->onBodyCallback = std::move(onBodyCallback);
     return this;
+}
+
+HttpRequest::~HttpRequest()
+{
+    for (auto [key, param] : params)
+        delete param;
+    params.clear();
 }
 
 }; // namespace cW
