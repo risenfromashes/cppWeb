@@ -77,27 +77,24 @@ Server&& Server::listen(std::initializer_list<short> ports)
 
 Server&& Server::run(int nThreads)
 {
-    if (nThreads < 0)
-        nThreads = 1
-            // std::thread::hardware_concurrency()
-            ;
-    // std::vector<std::unique_ptr<std::thread>> threads;
-    // for (int i = 0; i < nThreads; i++)
-    //     threads.push_back(std::make_unique<std::thread>([this] {
-    //         Poll poll(this);
-    //         for (auto port : ports) {
-    //             poll.add(ListenSocket::create("::", port));
-    //         }
-    //         poll.runLoop();
-    //     }));
-    // for (int i = 0; i < nThreads; i++)
-    //     if (threads[i]->joinable()) threads[i]->join();
-    Poll poll(this);
-    for (int i = 0; i < nThreads; i++) {
-        for (auto port : ports)
-            poll.add(ListenSocket::create("::", port));
-    }
-    poll.runLoop(nThreads);
+    if (nThreads < 0) nThreads = std::thread::hardware_concurrency();
+    std::vector<std::unique_ptr<std::thread>> threads;
+    for (int i = 0; i < nThreads; i++)
+        threads.push_back(std::make_unique<std::thread>([this] {
+            Poll poll(this);
+            for (auto port : ports) {
+                poll.add(ListenSocket::create("::", port));
+            }
+            poll.runLoop();
+        }));
+    for (int i = 0; i < nThreads; i++)
+        if (threads[i]->joinable()) threads[i]->join();
+    // Poll poll(this);
+    // for (int i = 0; i < nThreads; i++) {
+    //     for (auto port : ports)
+    //         poll.add(ListenSocket::create("::", port));
+    // }
+    // poll.runLoop(nThreads);
     return std::move(*this);
 }
 

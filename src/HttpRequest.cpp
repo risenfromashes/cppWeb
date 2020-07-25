@@ -41,7 +41,9 @@ bool HttpRequest::QueryComp::operator()(const std::string_view& a, const std::st
     }
 }
 
-HttpRequest::HttpRequest(const std::string_view& requestHeader)
+HttpRequest::HttpRequest(const std::string_view& requestHeader) { parse(requestHeader); }
+
+void HttpRequest::parse(const std::string_view& requestHeader)
 {
     std::string_view _method;
     auto             first_space  = requestHeader.find(' ');
@@ -72,8 +74,8 @@ HttpRequest::HttpRequest(const std::string_view& requestHeader)
     size_t statusLineEnd = requestHeader.find("\r\n") + 2;
     querySection         = (queryStart == std::string_view::npos) ? "" : url.substr(queryStart + 1);
     headerSection        = requestHeader.substr(statusLineEnd);
+    getContentLength();
 }
-
 // callback for more data
 HttpRequest* HttpRequest::onData(std::function<bool(std::string_view)>&& onDataCallback)
 {

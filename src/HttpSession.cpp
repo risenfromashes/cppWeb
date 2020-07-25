@@ -1,51 +1,53 @@
-#include "Server.h"
 #include "HttpSession.h"
-#include "ClientSocket.h"
 
+#include "ClientSocket.h"
+#include "Server.h"
+#include <sstream>
 namespace cW {
 
-HttpSession::HttpSession(ClientSocket* socket) : Session(socket, Session::HTTP) { dispatch(); }
-
-void HttpSession::dispatch()
+HttpSession::HttpSession(ClientSocket* socket, const std::string_view& requestHeader)
+    : Session(socket, Session::HTTP)
 {
-    auto headerEnd        = socket->receiveBuffer.find("\r\n\r\n");
-    requestHeader         = socket->receiveBuffer.substr(0, headerEnd + 2);
-    socket->receiveBuffer = socket->receiveBuffer.substr(headerEnd + 4);
-    request               = new HttpRequest(requestHeader);
-    response              = new HttpResponse();
+    dispatch(requestHeader);
+}
+
+void HttpSession::dispatch(const std::string_view& requestHeader)
+{
+    request  = new HttpRequest(requestHeader);
+    response = new HttpResponse();
     // Clock::printElapsed("Dispatching.");
     // reset write state
-    socket->server->dispatch(request, response);
-    onData();
+    if (hasHandler = socket->server->dispatch(request, response)) {
+        if (request->onBodyCallback) request->data.reserve(request->contentLength);
+        request->inHandler = false;
+    }
+    else
+        socket->connected = false;
 }
 bool HttpSession::shouldEnd()
 {
     // writebuffer must be emptied
-    return socket->writeBuffer.empty() && doneReceiving && (response->close || doneWriting);
+    return !hasHandler ||
+           (socket->writeBuffer.empty() && doneReceiving && (response->close || doneWriting));
 }
 
-bool HttpSession::badRequest()
+void HttpSession::badRequest()
 {
     response->close = true;
     socket->writeBuffer += ("HTTP/1.1 " + HttpStatus::status(HttpStatus::BadRequest) + "\r\n\r\n");
-    size_t len         = socket->writeBuffer.size();
-    return doneWriting = len == socket->write(nullptr, 0, true);
+    size_t len  = socket->writeBuffer.size();
+    doneWriting = len == socket->write(nullptr, 0, true);
 }
 
-void HttpSession::onData()
+void HttpSession::onData(const std::string_view& data)
 {
-
     try {
-        if (request->onDataCallback) {
-            doneReceiving = request->onDataCallback(socket->receiveBuffer);
-            socket->receiveBuffer.clear();
-        }
+        if (request->onDataCallback) { doneReceiving = request->onDataCallback(data); }
         else if (request->onBodyCallback) {
-            if (request->contentLength == __INF__)
-                request->contentLength = request->getHeader<int64_t>("Content-Length");
-            if (request->contentLength <= socket->receiveBuffer.size()) {
-                request->onBodyCallback(socket->receiveBuffer);
-                socket->receiveBuffer.clear();
+            request->data.append(data);
+            if (request->contentLength <= request->data.size()) {
+                request->onBodyCallback(request->data);
+                request->data.clear();
                 doneReceiving = true;
             }
         }
@@ -54,55 +56,60 @@ void HttpSession::onData()
     }
     catch (std::runtime_error& error) {
         std::cerr << error.what() << std::endl;
-        if (!writing) badRequest();
+        if (!wroteHeader) badRequest();
     }
 }
 
-bool HttpSession::onWritable()
+void HttpSession::onWritable()
 {
     if (!wroteHeader) {
-        assert(socket->writeBuffer.size() == 0 && "How is size not zero here?");
-        socket->writeBuffer += ("HTTP/1.1 " + HttpStatus::status(response->statusCode) + "\r\n");
-        for (auto [name, value] : response->headers)
-            socket->writeBuffer += (name + ": " + value + "\r\n");
-        socket->writeBuffer += "\r\n";
-        response->headerLength = socket->writeBuffer.size();
-        wroteHeader            = true;
+        // assert(socket->writeBuffer.size() == 0 && "How is size not zero here?");
+        socket->write("HTTP/1.1 ");
+        socket->write(HttpStatus::status(response->statusCode));
+        socket->write("\r\n");
+        for (auto [name, value] : response->headers) {
+            socket->write(name);
+            socket->write(": ");
+            socket->write(value);
+            socket->write("\r\n");
+        }
+        socket->write("\r\n");
+        wroteHeader = true;
     }
     if (response->onWritableCallback) {
         try {
-            response->onWritableCallback(
-                writeOffset < response->headerLength ? 0 : writeOffset - response->headerLength);
+            response->onWritableCallback(writeOffset);
         }
         catch (std::runtime_error& error) {
             std::cerr << error.what() << std::endl;
-            if (!writing) return badRequest();
+            if (!wroteHeader) return badRequest();
         }
     }
     if (!response->buffer.empty()) {
-        writing             = true;
         size_t bufferLength = response->buffer.length();
-        bool   final =
-            ((writeOffset < response->headerLength ? 0 : writeOffset - response->headerLength) +
-             bufferLength) >= response->contentLength;
+        bool   final        = (writeOffset + bufferLength) >= response->contentLength;
         writeOffset += socket->write(response->buffer.data(), bufferLength, final);
-        response->buffer   = std::string_view(nullptr, 0);
-        return doneWriting = (writeOffset - response->headerLength >= response->contentLength);
+        response->buffer = std::string_view(nullptr, 0);
+        doneWriting      = writeOffset >= response->contentLength;
     }
-
-    if (!socket->writeBuffer.empty()) writeOffset += socket->write(nullptr, 0, true);
-    return doneWriting = socket->writeBuffer.empty();
+    else {
+        if (!socket->writeBuffer.empty()) socket->write(nullptr, 0, true);
+        doneWriting = socket->writeBuffer.empty();
+    }
 }
+
+void HttpSession::onAwakePre() {}
+void HttpSession::onAwakePost() {}
+
 void HttpSession::onAborted()
 {
     if (response->onAbortCallback) response->onAbortCallback();
 }
+
 HttpSession::~HttpSession()
 {
     delete request;
     delete response;
-    socket->receiveBuffer.clear();
-    socket->writeBuffer.clear();
 }
 
 } // namespace cW

@@ -54,6 +54,7 @@ class WebSocketSession : Session {
         WsFrameHeader header;
         size_t        payloadLength;
         uint8_t       mask[4];
+        size_t        readOffset;
     };
     static inline void freeWsFrame(WsFrame* frame);
     static inline void freeFrame(Frame* frame);
@@ -76,7 +77,7 @@ class WebSocketSession : Session {
     WebSocketSession(ClientSocket* socket);
 
     //[shouldCancel, complete]
-    std::pair<bool, bool> parseFrame();
+    std::pair<bool, bool> parseFrame(const std::string_view& data);
 
     static inline void unMask(uint8_t* payload, size_t payloadLength, uint8_t (&mask)[4]);
 
@@ -87,10 +88,12 @@ class WebSocketSession : Session {
 
     ~WebSocketSession();
     // receives and writes one message at a time
-
+    void readyFrames();
+    void onAwakePre() override;
+    void onAwakePost() override;
     void onAborted() override;
-    bool onWritable() override;
-    void onData() override;
+    void onWritable() override;
+    void onData(const std::string_view& data) override;
     bool shouldEnd() override;
 };
 

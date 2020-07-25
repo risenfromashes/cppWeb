@@ -51,33 +51,84 @@ ClientSocket* ClientSocket::from(ListenSocket* listenSocket, const Server* serve
 }
 
 //  first check if writebuffer is empty, if so write as much as possible, return bytes wrote
-//  if the writeBuffer is not empty, try to write as much as possible
+//  if the writeBuffer is not empty, try to write  as much as possible
 //  if writeBuffer is successfully emptied, write as much data as possible
-int ClientSocket::write(const char* data, size_t size, bool final)
+int ClientSocket::write(const char* data, size_t size, bool final, bool must, bool useCork)
 {
-    static int disabled = 0;
-    bool       msg_more = data && size > 0;
-    int        ret;
-    if (!writeBuffer.empty()) {
-        ret = send(
-            fd, writeBuffer.data(), (int)writeBuffer.size(), MSG_NOSIGNAL | (msg_more * MSG_MORE));
-        if (ret < 0) {
-            perror("Write error");
-            return 0;
-        }
-        else {
-            writeBuffer = writeBuffer.substr(ret);
-            if (!writeBuffer.empty() || !msg_more) return ret;
-        }
+    static const unsigned int         corkBufferLength = 512 * 1024;
+    static thread_local char* const   corkBuffer       = (char*)malloc(corkBufferLength);
+    static thread_local int           corkBufferOffset = 0;
+    static thread_local ClientSocket* corkedSocket     = nullptr;
+
+    bool        msg_more, fromWriteBuffer = !writeBuffer.empty();
+    const char* buf;
+    int         bufLen;
+    if (fromWriteBuffer) {
+        msg_more = data && size > 0;
+        buf      = writeBuffer.data();
+        bufLen   = writeBuffer.size();
     }
-    int bytesWrote = ret;
-    msg_more       = !final;
-    ret            = send(fd, data, size, MSG_NOSIGNAL | (msg_more * MSG_MORE));
-    if (ret < 0)
+    else {
+        if (useCork) {
+            if (corkedSocket == this || (corkedSocket == nullptr && !final)) {
+                corkedSocket = this;
+                bool writtenToCork;
+                if (writtenToCork = (corkBufferOffset + size <= corkBufferLength)) {
+                    std::memcpy(corkBuffer + corkBufferOffset, data, size);
+                    corkBufferOffset += size;
+                    if (!final) return size;
+                }
+                // uncork
+                int ret =
+                    (corkBufferOffset == 0 ||
+                     corkBufferOffset ==
+                         write(
+                             corkBuffer, corkBufferOffset, writtenToCork && final, true, false)) &&
+                            !writtenToCork
+                        ? write(data, size, final, must, false)
+                        : (writtenToCork ? size : 0);
+                corkedSocket     = nullptr;
+                corkBufferOffset = 0;
+                return ret;
+            }
+        }
+        msg_more = !final;
+        buf      = data;
+        bufLen   = size;
+    }
+    int wrote = send(fd, buf, bufLen, MSG_NOSIGNAL | (msg_more * MSG_MORE));
+    if (wrote < 0) {
         perror("Write error");
-    else
-        bytesWrote += ret;
-    return bytesWrote;
+        wrote = 0;
+    }
+    wantWrite = !writeBuffer.empty() || msg_more || wrote < bufLen;
+    if (fromWriteBuffer) {
+        writeBuffer = writeBuffer.substr(wrote);
+        if (msg_more) {
+            if (writeBuffer.empty())
+                return write(data, size, final, must, useCork);
+            else if (must)
+                writeBuffer.append(data, size);
+        }
+        return 0;
+    }
+    else if (must && wrote < size)
+        writeBuffer.append(data + wrote, size - wrote);
+    return wrote;
+}
+
+int ClientSocket::write(const char* data, bool final)
+{
+    return write(data, strlen(data), final, true);
+}
+int ClientSocket::write(const std::string& data, bool final)
+{
+    return write(data.data(), data.size(), final, true);
+}
+
+int ClientSocket::write(const std::string_view& data, bool final)
+{
+    return write(data.data(), data.size(), final, true);
 }
 
 ClientSocket::~ClientSocket()
@@ -87,6 +138,7 @@ ClientSocket::~ClientSocket()
 
 void ClientSocket::loopPreCb()
 {
+    if (currentSession) { currentSession->onAwakePre(); }
     // lock.lock();
 }
 void ClientSocket::loopPostCb()
@@ -95,43 +147,53 @@ void ClientSocket::loopPostCb()
         if (currentSession->shouldEnd()) {
             delete currentSession;
             currentSession = nullptr;
+            writeBuffer.clear();
         }
+        else
+            currentSession->onAwakePost();
     }
     // last_active = std::chrono::steady_clock::now();
     // lock.unlock();
 }
-bool ClientSocket::onData()
+
+void ClientSocket::onData(const std::string_view& data)
 {
-    if (currentSession) {
-        currentSession->onData();
-        return true;
-    }
+    if (currentSession)
+        currentSession->onData(data);
     else {
         static const char* ws_match      = "upgrade: websocket";
         static int         ws_match_size = (int)strlen(ws_match);
         int                j             = 0;
-        if (contains(receiveBuffer, "HTTP/") && contains(receiveBuffer, "\r\n\r\n")) {
+        size_t             headerEnd     = data.find("\r\n\r\n");
+        if (contains(data, "HTTP/") && headerEnd != std::string_view::npos) {
             // naive linear string match since there's no repitition in match string
-            for (size_t i = 0; i < receiveBuffer.size(); i++) {
-                if (to_lower(receiveBuffer[i]) == ws_match[j]) {
+            for (size_t i = 0; i < data.size(); i++) {
+                if (to_lower(data[i]) == ws_match[j]) {
                     j++;
-                    if (j == ws_match_size) currentSession = new WebSocketSession(this);
+                    if (j == ws_match_size) {
+                        currentSession = new WebSocketSession(this);
+                        wantWrite      = true;
+                        return;
+                    }
                 }
                 else {
                     if (j != 0) i--; // match might start here
                     j = 0;
                 }
             }
-            currentSession = new HttpSession(this);
-            return true;
+            currentSession = new HttpSession(this, data.substr(0, headerEnd + 2));
+            if (data.size() > headerEnd + 4) currentSession->onData(data.substr(headerEnd + 4));
+            wantWrite = true;
         }
     }
-    return false;
 }
-bool ClientSocket::onWritable()
+// final?
+void ClientSocket::onWritable()
 {
-    if (currentSession) return currentSession->onWritable();
-    return true;
+    if (currentSession)
+        currentSession->onWritable();
+    else
+        wantWrite = false;
 }
 void ClientSocket::onAborted()
 {

@@ -29,7 +29,9 @@ void Poll::add(Socket* socket)
 
 void Poll::update(Socket* socket, uint32_t events) const
 {
-    ((epoll_event*)socket->event)->events = events | EPOLLONESHOT;
+    ((epoll_event*)socket->event)->events = events
+        //| EPOLLONESHOT
+        ;
     epoll_ctl(fd, EPOLL_CTL_MOD, socket->fd, (epoll_event*)(socket->event));
 }
 
@@ -69,7 +71,7 @@ void Poll::loop()
                                     add(acceptSocket);
                                 }
                             }
-                            update(socket, EPOLLIN);
+                            // update(socket, EPOLLIN);
                             break;
                         }
                     disconnect_listen:
@@ -81,7 +83,6 @@ void Poll::loop()
                     case Socket::Type::ACCEPT: {
                         ClientSocket* socket =
                             static_cast<ClientSocket*>((Socket*)events[i].data.ptr);
-                        uint32_t update_events = 0;
                         socket->loopPreCb();
                         if (!socket->connected) goto disconnect;
                         if (events[i].events & (EPOLLERR | EPOLLHUP)) {
@@ -97,32 +98,19 @@ void Poll::loop()
                                         perror("Receive error");
                                         goto disconnect;
                                     }
-                                    else
-                                        update_events = EPOLLIN;
                                 }
                                 else if (bytesReceived == 0) {
                                     goto disconnect;
                                 }
-                                else {
-                                    // only write when there's incoming data
-                                    socket->receiveBuffer.append(buffer, bytesReceived);
-                                    update_events = EPOLLIN | ((int)socket->onData() * EPOLLOUT);
-                                }
+                                else
+                                    socket->onData(std::string_view(buffer, bytesReceived));
                             }
-                            if (events[i].events & EPOLLOUT) {
-                                // const char* msg =
-                                //     "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nFuck!";
-                                // send(socket->fd, msg, (int)strlen(msg), MSG_NOSIGNAL);
-                                // shutdown(socket->fd, SHUT_WR);
-                                // close(socket->fd);
-                                // break;
-                                bool final    = socket->onWritable();
-                                update_events = EPOLLIN | (int(!final) * EPOLLOUT);
-                            };
+                            if (events[i].events & EPOLLOUT) socket->onWritable();
                         }
                         socket->loopPostCb();
                         if (socket->connected) {
-                            update(socket, update_events);
+                            update(socket,
+                                   EPOLLIN * socket->wantRead | EPOLLOUT * socket->wantWrite);
                             break;
                         }
                     disconnect:

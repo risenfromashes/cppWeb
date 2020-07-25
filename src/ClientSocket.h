@@ -7,6 +7,7 @@
 #include <chrono>
 #include <mutex>
 #include "ListenSocket.h"
+#include "Session.h"
 
 namespace cW {
 enum UpgradeSocket {
@@ -25,7 +26,6 @@ class ClientSocket : Socket {
     friend class HttpSession;
     friend class WebSocketSession;
 
-  protected:
     const Server* server;
 
     // TODO: implement timeout
@@ -36,6 +36,9 @@ class ClientSocket : Socket {
     static const int MaxWriteSize;
     static size_t    socketCount;
 
+    bool wantRead  = true;
+    bool wantWrite = false;
+
     std::mutex                   mtx;
     std::unique_lock<std::mutex> lock;
 
@@ -44,30 +47,28 @@ class ClientSocket : Socket {
 
     Session* currentSession = nullptr;
 
-    /* writeBuffer is only to be used for must be written data that the socket owns*/
     std::string writeBuffer;
-    std::string receiveBuffer;
 
     static ClientSocket* from(ListenSocket* listenSocket, const Server* server);
 
-    int write(const char* data, size_t size, bool final);
+    int write(const char* data, size_t size, bool final, bool must = false, bool useCork = true);
+    int write(const char* data, bool final = false);
+    int write(const std::string& data, bool final = false);
+    int write(const std::string_view& data, bool final = false);
 
     ClientSocket(SOCKET fd, const char* ip, const Server* server);
-
     ClientSocket(const ClientSocket&) = delete;
     ClientSocket(ClientSocket&&)      = delete;
     ClientSocket& operator=(const ClientSocket&) = delete;
 
-    ~ClientSocket();
-
     void loopPreCb();
     void loopPostCb();
-    // poll for write?
-    bool onData();
-    // final?
-    bool onWritable();
+    void onData(const std::string_view& data);
+    void onWritable();
     void onAborted();
     void disconnect();
+
+    ~ClientSocket();
 };
 
 }; // namespace cW

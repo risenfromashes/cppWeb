@@ -48,24 +48,76 @@ constexpr uint16_t from_hex(char hexCh)
 }
 
 template <bool rightLowerCase = false>
-constexpr bool ci_match(const std::string& a, const std::string& b)
+constexpr bool ci_match(const char* a, size_t a_size, const char* b, size_t b_size)
 {
-    size_t size;
-    if (size = a.size() != b.size()) return false;
+    if (a_size != b_size) return false;
     if constexpr (rightLowerCase) {
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < a_size; i++)
             if (to_lower(a[i]) != b[i]) return false;
     }
     else {
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < a_size; i++)
             if (to_lower(a[i]) != to_lower(b[i])) return false;
     }
     return true;
 }
 
+template <bool rightLowerCase = false>
+constexpr bool ci_match(const std::string& a, const std::string& b)
+{
+    return ci_match<rightLowerCase>(a.data(), a.size(), b.data(), b.size());
+}
+
+template <bool rightLowerCase = false>
+constexpr bool ci_match(const std::string_view& a, const std::string_view& b)
+{
+    return ci_match<rightLowerCase>(a.data(), a.size(), b.data(), b.size());
+}
+
 inline bool contains(const std::string& str, const char* pattern)
 {
     return str.find(pattern) != std::string::npos;
+}
+inline bool contains(const std::string_view& str, const char* pattern)
+{
+    return str.find(pattern) != std::string::npos;
+}
+
+template <bool rightLowerCase = false>
+inline size_t ci_find(const char* a, size_t a_size, const char* b, size_t b_size)
+{
+    for (size_t i = 0; i < a_size; i++) {
+        bool match = true;
+        if constexpr (rightLowerCase) {
+            for (size_t j = 0; j < b_size && i + j < a_size; j++)
+                if (to_lower(a[i + j]) != b[j]) {
+                    match = false;
+                    break;
+                }
+            if (match) return i;
+        }
+        else {
+            for (size_t j = 0; j < b_size && i + j < a_size; j++)
+                if (to_lower(a[i + j]) != to_lower(b[j])) {
+                    match = false;
+                    break;
+                }
+            if (match) return i;
+        }
+    }
+    return __INF__;
+}
+
+template <bool rightLowerCase = false>
+inline size_t ci_find(const std::string& str, const char* pattern)
+{
+    return ci_find<rightLowerCase>(str.data(), str.size(), pattern, strlen(pattern));
+}
+
+template <bool rightLowerCase = false>
+inline size_t ci_find(const std::string_view& str, const char* pattern)
+{
+    return ci_find<rightLowerCase>(str.data(), str.size(), pattern, strlen(pattern));
 }
 
 char* url_decode(const char* str, size_t size = 0);

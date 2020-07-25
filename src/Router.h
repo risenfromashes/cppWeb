@@ -31,8 +31,8 @@ class Router {
   public:
     void addHttpHandler(const char* route, HttpMethod method, HttpHandler&& handler);
     void addWsHandler(const char* route, WsEvent event, WsHandler&& handler);
-    void dispatch(HttpRequest* request, HttpResponse* response) const;
-    void dispatch(WsEvent event, WebSocket* ws) const;
+    bool dispatch(HttpRequest* request, HttpResponse* response) const;
+    bool dispatch(WsEvent event, WebSocket* ws) const;
     ~Router();
 };
 

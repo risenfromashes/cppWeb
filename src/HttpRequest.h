@@ -29,6 +29,9 @@ class HttpRequest {
     std::string_view url;
     std::string_view absolutePath;
 
+    std::string data;
+    bool        inHandler = true;
+
     const UrlPath* urlPath;
 
     std::string_view                       headerSection;
@@ -46,7 +49,10 @@ class HttpRequest {
     std::function<bool(std::string_view)> onDataCallback = nullptr;
     std::function<void(std::string_view)> onBodyCallback = nullptr;
     // only to be initialized when the headers have been fully received
-    HttpRequest(const std::string_view& receivedData);
+    HttpRequest(const std::string_view& requestHeader);
+    void parse(const std::string_view& requestHeader);
+
+    inline void getContentLength();
 
   public:
     ~HttpRequest();
@@ -68,10 +74,27 @@ class HttpRequest {
         std::is_convertible_v<std::string, T> const T getParam(const std::string_view& key);
 };
 
+void HttpRequest::getContentLength()
+{
+    static const char* headerName    = "content-length";
+    static const int   headerNameLen = strlen(headerName);
+    size_t             start;
+    if ((start = ci_find<true>(headerSection, headerName)) < __INF__) {
+        start += headerNameLen;
+        while (headerSection[start] == ' ' || headerSection[start] == ':')
+            start++;
+        contentLength = strtoull(headerSection.data() + start, nullptr, 10);
+    }
+    else
+        contentLength = 0;
+}
+
 template <typename T>
     requires std::is_arithmetic_v<T> ||
     std::is_convertible_v<std::string, T> const T HttpRequest::getQuery(const std::string_view& key)
 {
+    assert(inHandler &&
+           "Cannot access request information outside of route handler or inside data handler");
     static QueryComp queryComp;
     if (!queriesSplitted) {
         size_t len = querySection.size();
@@ -111,6 +134,8 @@ template <typename T>
     requires std::is_arithmetic_v<T> ||
     std::is_convertible_v<std::string, T> const T HttpRequest::getParam(const std::string_view& key)
 {
+    assert(inHandler &&
+           "Cannot access request information outside of route handler or inside data handler");
     if (!paramsParsed) {
         params       = urlPath->parseParams(url);
         paramsParsed = true;
@@ -125,6 +150,8 @@ template <typename T>
     requires std::is_arithmetic_v<T> || std::is_convertible_v<std::string_view, T> const T
                                         HttpRequest::getHeader(const std::string_view& key)
 {
+    assert(inHandler &&
+           "Cannot access request information outside of route handler or inside data handler");
     static HeaderComp headerComp;
     if (!headersSplitted) {
         size_t len = headerSection.size();

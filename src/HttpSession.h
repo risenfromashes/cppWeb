@@ -9,7 +9,7 @@ namespace cW {
 
 class ClientSocket;
 
-struct HttpSession : Session {
+class HttpSession : Session {
     friend class Poll;
     friend class ClientSocket;
     friend class Server;
@@ -18,20 +18,19 @@ struct HttpSession : Session {
     HttpRequest*  request       = nullptr;
     bool          wroteHeader   = false;
     size_t        writeOffset   = 0;
-    bool          writing       = false;
-    bool          sessionEnd    = false;
-    bool          dispatched    = false;
     bool          doneWriting   = false;
-    bool          doneReceiving = false;
-    // request header need to last the life time of the session
-    std::string requestHeader;
+    bool          doneReceiving = true; // if no data is available, this is the default
+    bool          dispatched    = false;
+    bool          hasHandler;
 
-    HttpSession(ClientSocket* socket);
-    void dispatch();
-    bool badRequest();
+    HttpSession(ClientSocket* socket, const std::string_view& requestHeader);
+    void dispatch(const std::string_view& requestHeader);
+    void badRequest();
+    void onAwakePre() override;
+    void onAwakePost() override;
     void onAborted() override;
-    void onData() override;
-    bool onWritable() override;
+    void onData(const std::string_view& recvBuf) override;
+    void onWritable() override;
     bool shouldEnd() override;
     ~HttpSession();
 };

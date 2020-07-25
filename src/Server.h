@@ -17,8 +17,8 @@ class Server {
     const char*                 activeWsRoute = nullptr;
     std::vector<unsigned short> ports;
 
-    inline void dispatch(HttpRequest* req, HttpResponse* res) const;
-    inline void dispatch(WsEvent event, WebSocket* ws) const;
+    inline bool dispatch(HttpRequest* req, HttpResponse* res) const;
+    inline bool dispatch(WsEvent event, WebSocket* ws) const;
 
   public:
     Server();
@@ -38,8 +38,11 @@ class Server {
     ~Server();
 };
 
-void Server::dispatch(HttpRequest* req, HttpResponse* res) const { router.dispatch(req, res); }
-void Server::dispatch(WsEvent event, WebSocket* ws) const { router.dispatch(event, ws); }
+bool Server::dispatch(HttpRequest* req, HttpResponse* res) const
+{
+    return router.dispatch(req, res);
+}
+bool Server::dispatch(WsEvent event, WebSocket* ws) const { return router.dispatch(event, ws); }
 
 } // namespace cW
 
