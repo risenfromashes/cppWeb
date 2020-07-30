@@ -5,11 +5,13 @@
             "includePath": [
                 "${workspaceFolder}/**"
             ],
-            "defines": [],
-            "compilerPath": "/usr/bin/gcc",
+            "defines": [
+                "__cpp_concepts=201907L"
+            ],
+            "compilerPath": "/usr/bin/gcc-10",
             "cStandard": "c11",
             "cppStandard": "c++20",
-            "intelliSenseMode": "clang-x64",
+            "intelliSenseMode": "gcc-x64",
             "compileCommands": "${workspaceFolder}/build/compile_commands.json",
             "configurationProvider": "ms-vscode.cmake-tools"
         }

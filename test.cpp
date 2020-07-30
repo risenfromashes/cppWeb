@@ -20,5 +20,5 @@ int main()
                  //      [=](size_t offset) { res->write(buf + offset, size - offset, size); });
              })
         .listen(9001)
-        .run();
+        .run(cW::MTMode::MULTIPLE_LISTENER);
 }

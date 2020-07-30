@@ -49,14 +49,14 @@ class ClientSocket : Socket {
 
     std::string writeBuffer;
 
-    static ClientSocket* from(ListenSocket* listenSocket, const Server* server);
+    static ClientSocket* from(ListenSocket* listenSocket, const Server* server, bool onePoll);
 
     int write(const char* data, size_t size, bool final, bool must = false, bool useCork = true);
     int write(const char* data, bool final = false);
     int write(const std::string& data, bool final = false);
     int write(const std::string_view& data, bool final = false);
 
-    ClientSocket(SOCKET fd, const char* ip, const Server* server);
+    ClientSocket(SOCKET fd, const char* ip, const Server* server, bool oneShot);
     ClientSocket(const ClientSocket&) = delete;
     ClientSocket(ClientSocket&&)      = delete;
     ClientSocket& operator=(const ClientSocket&) = delete;

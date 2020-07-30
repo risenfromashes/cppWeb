@@ -15,6 +15,7 @@ class Poll {
 
     int                 fd;
     std::atomic<size_t> nSockets = 0;
+    bool                onePoll;
 
     static const unsigned int bufferSize;
 
@@ -25,7 +26,7 @@ class Poll {
     const Server* server;
 
   public:
-    Poll(const Server* server);
+    Poll(const Server* server, bool onePoll = true);
 
     void add(Socket* socket);
     void update(Socket* socket, uint32_t events) const;

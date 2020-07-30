@@ -9,6 +9,8 @@ namespace cW {
 
 class ClientSocketSet;
 
+enum MTMode { ONE_LISTENER, MULTIPLE_LISTENER };
+
 class Server {
     friend class HttpSession;
     friend class WebSocketSession;
@@ -34,7 +36,7 @@ class Server {
     Server&& message(WsHandler&& handler);
     Server&& listen(unsigned short port);
     Server&& listen(std::initializer_list<short> ports);
-    Server&& run(int nThreads = -1);
+    Server&& run(MTMode mtMode = MTMode::ONE_LISTENER, int nThreads = -1);
     ~Server();
 };
 

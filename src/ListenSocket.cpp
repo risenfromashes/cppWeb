@@ -15,7 +15,7 @@
 
 namespace cW {
 
-ListenSocket* ListenSocket::create(const char* host, int port)
+ListenSocket* ListenSocket::create(const char* host, int port, bool reuse_addr)
 {
     addrinfo hints, *addr_result;
     memset(&hints, 0, sizeof(hints));
@@ -45,10 +45,11 @@ ListenSocket* ListenSocket::create(const char* host, int port)
             listenAddr   = addr;
         }
     }
-
-    int enabled = 1;
-    setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&enabled, sizeof(enabled));
-    setsockopt(listenSocket, SOL_SOCKET, SO_REUSEPORT, (const char*)&enabled, sizeof(enabled));
+    if (reuse_addr) {
+        int enabled = 1;
+        setsockopt(listenSocket, SOL_SOCKET, SO_REUSEADDR, (const char*)&enabled, sizeof(enabled));
+        setsockopt(listenSocket, SOL_SOCKET, SO_REUSEPORT, (const char*)&enabled, sizeof(enabled));
+    }
     int disabled = 0;
     setsockopt(listenSocket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&disabled, sizeof(disabled));
 
@@ -60,8 +61,7 @@ ListenSocket* ListenSocket::create(const char* host, int port)
         perror("Listening error");
         return nullptr;
     }
-    // std::cout << "Listening on " << port << std::endl;
-    return new ListenSocket(listenSocket);
+    return new ListenSocket(listenSocket, !reuse_addr);
 }
 
 SOCKET ListenSocket::createSocket(int family, int type, int protocol)

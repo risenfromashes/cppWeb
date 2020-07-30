@@ -5,10 +5,23 @@
 #include <cassert>
 #include <string>
 #include <chrono>
+#include <type_traits>
+#include <concepts>
+#include "macro_foreach_def.h"
+#include <iostream>
 
 namespace cW {
 
 #define __INF__ static_cast<size_t>(-1)
+
+template <typename T>
+using clean_t = std::remove_pointer_t<std::remove_cvref_t<T>>;
+
+template <typename, template <typename...> class>
+constexpr bool is_specialization_v = false;
+
+template <template <typename...> class T, typename... R>
+constexpr bool is_specialization_v<T<R...>, T> = true;
 
 class Clock {
     static std::chrono::steady_clock::time_point start_time;
@@ -151,6 +164,105 @@ inline void reverseByteOrder(T* val, uint8_t size = 0)
     for (int i = 0; i < size / 2; i++)
         std::swap(bytes[i], bytes[size - i - 1]);
 }
+
+void generate_macro_foreach_header(unsigned int max_item_count);
+
+template <unsigned N>
+struct FixedString {
+    char buf[N + 1]{};
+    constexpr FixedString(char const* s)
+    {
+        for (unsigned int i = 0; i != N; ++i)
+            buf[i] = s[i];
+    }
+    constexpr operator char const*() const { return buf; }
+};
+
+template <unsigned N>
+FixedString(char const (&)[N])->FixedString<N - 1>;
+
+template <typename T1, typename T2>
+struct offset_of_impl {
+    static constexpr char           dummy[sizeof(T2)]{};
+    static constexpr std::ptrdiff_t offset_of(T1 T2::*member)
+    {
+        T2* obj = (T2*)size_t(&dummy);
+        return (size_t(&(obj->*member)) - size_t(obj));
+    }
+};
+
+template <typename T1, typename T2>
+constexpr std::ptrdiff_t offset_of(T1 T2::*member)
+{
+    return offset_of_impl<T1, T2>::offset_of(member);
+}
+
+#ifdef __cpp_nontype_template_parameter_class
+// clang-format off
+template <typename T, class _Class_T>
+concept __PrintEntry = requires (T)
+{ 
+    {T::name} -> std::convertible_to<const char*>;
+    T::print((_Class_T*)nullptr);
+};
+template <typename T>
+concept PrintableVal = std::is_convertible_v<T, const char*> 
+                        || (std::is_pointer_v<T> && 
+                            requires(T a, std::ostream oss){ oss << (*a);} ||
+                            requires(T a) { {a->toString()}->std::convertible_to<std::string>; }) ||
+                           (!std::is_pointer_v<T> && 
+                            requires(T a, std::ostream oss){ oss << a;} ||
+                            requires(T a) { {a.toString()}->std::convertible_to<std::string>; });
+
+// clang-format on
+
+template <class _Class_T, PrintableVal _Member_T, FixedString _name, size_t _offset>
+struct PrintEntry {
+    static constexpr const char* name = _name;
+    static void                  print(_Class_T* _this)
+    {
+        std::cout << name << ": ";
+        if constexpr (std::is_convertible_v<_Member_T, const char*>) {
+            std::cout << *((_Member_T*)(size_t(_this) + _offset)) << std::endl;
+        }
+        else if constexpr (std::is_pointer_v<_Member_T>) {
+            if constexpr (requires(_Member_T a, std::ostream oss) { oss << (*a); })
+                std::cout << *(*((_Member_T*)(size_t(_this) + _offset))) << std::endl;
+            else
+                std::cout << (*((_Member_T*)(size_t(_this) + _offset)))->toString() << std::endl;
+        }
+        else {
+            if constexpr (requires(_Member_T a, std::ostream oss) { oss << a; })
+                std::cout << *((_Member_T*)(size_t(_this) + _offset)) << std::endl;
+            else
+                std::cout << ((_Member_T*)(size_t(_this) + _offset))->toString() << std::endl;
+        }
+    }
+};
+
+template <class _Class_T, __PrintEntry<_Class_T>... _Entries>
+struct PrintContext {
+    static constexpr size_t entry_count = sizeof...(_Entries);
+    template <size_t index, __PrintEntry<_Class_T> _entry, __PrintEntry<_Class_T>... _entries>
+    static void _print(_Class_T* ptr)
+    {
+        _entry::print(ptr);
+        if constexpr (index > 0) _print<index - 1, _entries...>(ptr);
+    }
+    static void print(_Class_T* ptr) { _print<entry_count - 1, _Entries...>(ptr); }
+};
+
+#define PRINTENTRY(type, mem) \
+    , cW::PrintEntry<type, decltype(type::mem), #mem, cW::offset_of(&type::mem)>
+#define PRINTABLE(type, ...)                                                                     \
+    inline void print()                                                                          \
+    {                                                                                            \
+        cW::PrintContext<type CW_MACRO_FOR_EACH_EX(PRINTENTRY, type, __VA_ARGS__)>::print(this); \
+    }
+#else
+#define PRINTABLE(type, ...) void print();
+#endif
+
 }; // namespace cW
 
 #endif

@@ -15,12 +15,12 @@ const int ClientSocket::MaxWriteSize = 1024 * 1024;
 
 const std::chrono::steady_clock::duration ClientSocket::timeout = std::chrono::seconds(5);
 
-ClientSocket::ClientSocket(SOCKET fd, const char* ip, const Server* server)
-    : Socket(Type::ACCEPT, fd), ip(ip), server(server)
+ClientSocket::ClientSocket(SOCKET fd, const char* ip, const Server* server, bool oneShot)
+    : Socket(Type::ACCEPT, fd, oneShot), ip(ip), server(server)
 {
 }
 
-ClientSocket* ClientSocket::from(ListenSocket* listenSocket, const Server* server)
+ClientSocket* ClientSocket::from(ListenSocket* listenSocket, const Server* server, bool onePoll)
 {
     sockaddr_storage addr;
     uint32_t         addr_len = sizeof(addr);
@@ -38,16 +38,17 @@ ClientSocket* ClientSocket::from(ListenSocket* listenSocket, const Server* serve
     setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &enabled, sizeof(enabled));
 
     char ip[64];
-    // if (addr.ss_family == AF_INET6) {
-    //     if (!inet_ntop(AF_INET6, (sockaddr_in6*)&addr, ip, 64))
-    //         perror("Couldn't format ipv6 address");
-    // }
-    // else if (addr.ss_family == AF_INET) {
-    if (!inet_ntop(AF_INET, (sockaddr_in*)&addr, ip, 64)) perror("Couldn't format ipv4 address");
-    // }
+    if (addr.ss_family == AF_INET6) {
+        if (!inet_ntop(AF_INET6, (sockaddr_in6*)&addr, ip, 64))
+            perror("Couldn't format ipv6 address");
+    }
+    else if (addr.ss_family == AF_INET) {
+        if (!inet_ntop(AF_INET, (sockaddr_in*)&addr, ip, 64))
+            perror("Couldn't format ipv4 address");
+    }
     else
         strcpy(ip, "\0");
-    return new ClientSocket(fd, ip, server);
+    return new ClientSocket(fd, ip, server, onePoll);
 }
 
 //  first check if writebuffer is empty, if so write as much as possible, return bytes wrote

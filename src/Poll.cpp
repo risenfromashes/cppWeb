@@ -12,7 +12,7 @@ namespace cW {
 
 const unsigned int Poll::bufferSize = 512 * 1024;
 
-Poll::Poll(const Server* server) : server(server)
+Poll::Poll(const Server* server, bool onePoll) : server(server), onePoll(onePoll)
 {
     fd = epoll_create1(EPOLL_CLOEXEC);
     if (fd == -1) {
@@ -29,9 +29,7 @@ void Poll::add(Socket* socket)
 
 void Poll::update(Socket* socket, uint32_t events) const
 {
-    ((epoll_event*)socket->event)->events = events
-        //| EPOLLONESHOT
-        ;
+    ((epoll_event*)socket->event)->events = events | onePoll * EPOLLONESHOT;
     epoll_ctl(fd, EPOLL_CTL_MOD, socket->fd, (epoll_event*)(socket->event));
 }
 
@@ -67,11 +65,11 @@ void Poll::loop()
                         else {
                             if (events[i].events & EPOLLIN) {
                                 ClientSocket* acceptSocket;
-                                while (acceptSocket = ClientSocket::from(socket, server)) {
+                                while (acceptSocket = ClientSocket::from(socket, server, onePoll)) {
                                     add(acceptSocket);
                                 }
                             }
-                            // update(socket, EPOLLIN);
+                            update(socket, EPOLLIN);
                             break;
                         }
                     disconnect_listen:

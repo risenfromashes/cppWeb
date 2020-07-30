@@ -27,7 +27,7 @@ struct Socket {
   protected:
     std::atomic<bool> connected = true;
     void*             event;
-    Socket(Type type, SOCKET fd);
+    Socket(Type type, SOCKET fd, bool oneShot = true);
     ~Socket();
 };
 }; // namespace cW

@@ -12,10 +12,10 @@ struct ListenSocket : public Socket {
     ListenSocket(ListenSocket&&)      = delete;
     ListenSocket& operator=(ListenSocket&) = delete;
 
-    static ListenSocket* create(const char* host, int port);
+    static ListenSocket* create(const char* host, int port, bool reuse_addr = false);
 
   private:
-    ListenSocket(SOCKET fd) : Socket(Type::LISTEN, fd) {}
+    ListenSocket(SOCKET fd, bool oneShot) : Socket(Type::LISTEN, fd, oneShot) {}
 
     static SOCKET createSocket(int family, int type, int protocol);
 };
