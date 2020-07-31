@@ -15,13 +15,30 @@ namespace cW {
 #define __INF__ static_cast<size_t>(-1)
 
 template <typename T>
-using clean_t = std::remove_pointer_t<std::remove_cvref_t<T>>;
+using clean_t = std::remove_cv_t<std::remove_pointer_t<T>>;
+
+template <typename T>
+constexpr bool is_ref_v = std::is_lvalue_reference_v<T> || std::is_rvalue_reference_v<T>;
 
 template <typename, template <typename...> class>
 constexpr bool is_specialization_v = false;
 
 template <template <typename...> class T, typename... R>
 constexpr bool is_specialization_v<T<R...>, T> = true;
+
+template <typename T1, typename T2>
+struct __mem_pointer_t {
+    using _Class_T  = T1;
+    using _Member_T = T2;
+    constexpr __mem_pointer_t(T2 T1::*) {}
+};
+
+template <auto _member_ptr>
+requires std::is_member_pointer_v<decltype(_member_ptr)> using member_pointer_class_t =
+    decltype(__mem_pointer_t_member_ptr)::_Class_T;
+template <auto _member_ptr>
+requires std::is_member_pointer_v<decltype(_member_ptr)> using member_pointer_member_t =
+    decltype(__mem_pointer_t_member_ptr)::_Member_T;
 
 class Clock {
     static std::chrono::steady_clock::time_point start_time;
