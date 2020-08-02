@@ -31,18 +31,21 @@ class RuntimeError : public std::runtime_error {
     {
     }
     template <typename P, typename... R>
-    static inline RuntimeError format(P* toDelete, const std::string& message, R... args)
+    static inline RuntimeError formatAndDelete(P* toDelete, const char* message, R... args)
     {
         if (toDelete) delete toDelete;
         std::ostringstream oss;
-        oss << prefix << message;
+        oss << prefix << " " << message;
         if constexpr (sizeof...(args) > 0) __write(oss, args...);
         return RuntimeError(oss.str());
     }
     template <typename... R>
-    static inline void format(const std::string& message, R... args)
+    static inline RuntimeError format(const char* message, R... args)
     {
-        return format(nullptr, message, args...);
+        std::ostringstream oss;
+        oss << prefix << " " << message;
+        if constexpr (sizeof...(args) > 0) __write(oss, args...);
+        return RuntimeError(oss.str());
     }
     const char* what() const noexcept override { return errorString.c_str(); }
 };
@@ -55,11 +58,10 @@ struct JsonNode;
 
 template <typename T, class _Class_T>
 concept __JsonEntry = requires(std::ostream& os, _Class_T* ptr, JsonNode* node){
-    { T::key }->std::convertible_to<const char*>;
-    T::write(ptr, os);
-    T::set(ptr, node);
-    //{T::toJson(ptr) }->std::convertible_to<std::string>;
-};
+                        { T::key }->std::convertible_to<const char*>;
+                         T::write(ptr, os);
+                         T::set(ptr, node);
+                      };
 
 template <typename T>
 concept __JsonVal = std::is_convertible_v<T, const char*> && !std::is_unbounded_array_v<T> ||
@@ -69,7 +71,7 @@ concept __JsonVal = std::is_convertible_v<T, const char*> && !std::is_unbounded_
                        requires(clean_t<T> a, const std::string_view& v) { (decltype(a))(v); } || //view of json data
                        requires(clean_t<T> a, int v) { (decltype(a))(v); } || // number or bool
                        requires(clean_t<T> a, JsonNode* v) { a(v); } || // object
-                       requires(clean_t<T> a, JsonNode* v) { (decltype(a))::parseJson(v); } // object
+                       requires(clean_t<T> a, JsonNode* v) { decltype(a)::parseJson(v); } // object
                       ) &&
                       (requires(clean_t<T> val, std::ostream& os) { os << val; } ||
                        requires(clean_t<T> val, std::ostream& os) { val.writeJson(os); } ||
@@ -86,7 +88,7 @@ concept __JsonContainer = requires(_Container_T a)
                               a.begin();
                               ++(a.begin());
                               a.end();
-                              a.clean();
+                              a.clear();
                               a.size();
                               requires requires(clean_t<decltype(*a.begin())> t)
                               {
@@ -100,11 +102,9 @@ template <typename _Container_T>
 concept __JsonArray = (std::is_bounded_array_v<clean_t<_Container_T>> &&
                         requires(clean_t<_Container_T> a) {
                           requires __JsonVal<clean_t<decltype(a[0])>> ||
-                            std::is_bounded_array_v<clean_t<decltype(a[0])>> &&
-                            requires __JsonVal<clean_t<decltype(a[0][0])>> ||
-                              std::is_bounded_array_v<clean_t<decltype(a[0][0])>> &&
-                              requires __JsonVal<clean_t<decltype(a[0][0][0])>>;
-                        };) ||
+                            std::is_bounded_array_v<clean_t<decltype(a[0])>> &&  __JsonVal<clean_t<decltype(a[0][0])>> ||
+                              std::is_bounded_array_v<clean_t<decltype(a[0][0])>> && __JsonVal<clean_t<decltype(a[0][0][0])>>;
+                        }) ||
                         requires(clean_t<_Container_T> a){
                             requires __JsonContainer<decltype(a)>;
                             requires __JsonVal<clean_t<decltype(*a.begin())>> || 
@@ -121,7 +121,7 @@ concept __JsonArray = (std::is_bounded_array_v<clean_t<_Container_T>> &&
 
 //return type cannot even be char[N]
 template <typename T>
-concept __JsonReturnVal = requires __JsonVal<T> && !std::is_array_v<T> && !is_ref_v<T> &&
+concept __JsonReturnVal = __JsonVal<T> && !std::is_array_v<T> && !is_ref_v<T> &&
                           (std::is_pointer_v<T> || std::is_copy_constructible_v<clean_t<T>>) || //parsable
                           std::is_same_v<cW::clean_t<T>, JsonNode> ||
                           std::is_base_of_v<JsonNode, cW::clean_t<T>>; //node value
@@ -147,11 +147,11 @@ struct JsonNode {
     enum Type { Value, Array, Object };
     const Type type;
     virtual ~JsonNode() {}
-    template <typename T = long double>
+    template <typename T>
 #ifdef __cpp_concepts
         requires __JsonReturnVal<T> || __JsonReturnArray<T> 
 #endif
-    T get(const std::string_view& path);
+    T get(const std::string_view& path = "");
   protected:
     JsonNode(Type type) noexcept : type(type) {}
 };
@@ -178,7 +178,7 @@ struct JsonBool : JsonValue {
 struct JsonNumber : JsonValue {
     const char* value;
     JsonNumber(const char* start_ptr) : JsonValue(JsonValue::Number), value(start_ptr) {}
-    template <typename T>
+    template <typename T = long double>
     requires std::is_arithmetic_v<T> T get()
     {
         if constexpr (std::is_integral_v<T>) {
@@ -216,15 +216,16 @@ struct JsonObject : JsonNode {
 
 #ifdef __cpp_nontype_template_parameter_class
 
-template <FixedString _key, auto _member_ptr>
+
+template<FixedString _key, auto _member_ptr>
     requires std::is_member_pointer_v<decltype(_member_ptr)> &&
-     (__JsonVal<member_pointer_member_t<_member_ptr>> || __JsonArray<member_pointer_member_t<_member_ptr>>) 
+      (__JsonVal<typename mem_ptr_t<decltype(_member_ptr)>::MemberT> || __JsonArray<typename mem_ptr_t<decltype(_member_ptr)>::MemberT>)  
 struct JsonEntry {
     using error = RuntimeError<"Invalid conversion from json to object.">;
-    using _Class_T = member_pointer_class_t<_member_ptr>;
-    using _Member_T = member_pointer_member_t<_member_ptr>;
+    using _Class_T  = mem_ptr_t<decltype(_member_ptr)>::ClassT;
+    using _Member_T = mem_ptr_t<decltype(_member_ptr)>::MemberT;
     using _Clean_Tp = std::remove_cv_t<_Member_T>;
-    using _Clean_T = clean_t<_Member_T>;
+    using _Clean_T  = clean_t<_Member_T>;
 
     static constexpr const char* key        = _key;
     static constexpr const bool  is_pointer = std::is_pointer_v<_Member_T>;
@@ -303,10 +304,10 @@ struct JsonEntry {
                 }
             }
             const T& val = getRef(valp);
-            if constexpr (level < rank - 1)
-                writeArray<T>(val, os);
-            else
+            if constexpr (__JsonVal<T>)
                 writeVal(val, os);
+            else
+                writeArray<T>(val, os);
             if (i < std::extent_v<_Array_T> - 1) os << ",";
         }
         os << "]";
@@ -314,13 +315,13 @@ struct JsonEntry {
 
     template<typename _Array_T>
     static void setArray(_Array_T& arr, JsonArray* jarr){
-        using Tp = std::remover_cvref_t<decltype(arr[0])>;
+        using Tp = std::remove_cvref_t<decltype(arr[0])>;
         using T  = clean_t<Tp>;
         constexpr bool isPtr = std::is_pointer_v<Tp>;
         size_t len = std::min(jarr->elements.size(), std::extent_v<_Array_T>);
         for(int i = 0; i < len; i++){
             if constexpr(__JsonReturnVal<T>)
-                arr[i] = jarr->elements[i].get<Tp>();
+                arr[i] = jarr->elements[i]->get<Tp>();
             else {
                 if(jarr->elements[i]->type == JsonNode::Array)
                     setArray<T>(arr[i], (JsonArray*)jarr->elements[i]);
@@ -366,22 +367,24 @@ struct JsonEntry {
         using Tp = std::remove_cvref_t<decltype(*arr.begin())>;
         using T  = clean_t<Tp>;
         constexpr bool isPtr = std::is_pointer_v<Tp>;
-        size_t len = std::min(jarr->elements.size(), std::extent_v<_Array_T>);
+        size_t len = jarr->elements.size();
         if (arr.size() > 0) arr.clear();
         for(int i = 0; i < len; i++){
             if constexpr(__JsonReturnVal<T>){
-                if constexpr(requires(_List_T a, Tp b){ a.push_back(b)})
-                    arr.push_back(jarr->elements[i].get<Tp>());
-                else
-                    arr.insert(jarr->elements[i].get<Tp>());
+                if constexpr(requires(_List_T a, Tp b){ a.push_back(b); })
+                    arr.push_back(jarr->elements[i]->get<Tp>());
+                else if constexpr(requires(_List_T a, Tp b){ a.insert(b); })
+                    arr.insert(jarr->elements[i]->get<Tp>());
+                else throw error::format("Invalid container type. It shouldn't get here.");
             }
             else {
                 if(jarr->elements[i]->type == JsonNode::Array){
                     auto elm = createInstance<T, isPtr>();
-                    if constexpr(requires(_List_T a, Tp b){ a.push_back(b)})
+                    if constexpr(requires(_List_T a, Tp b){ a.push_back(b); })
                         arr.push_back(elm);
-                    else
+                    else if constexpr(requires(_List_T a, Tp b){ a.insert(b); })
                         arr.insert(elm);
+                    else throw error::format("Invalid container type. It shouldn't get here.");
                     setList<T>(getRef(elm), (JsonArray*)jarr->elements[i]);
                 }
                 else throw error::format("Failed conversion from json array.");
@@ -409,12 +412,12 @@ struct JsonEntry {
         if constexpr (__JsonVal<T>)
             writeVal(val, os);
         else if constexpr (std::is_bounded_array_v<T>)
-            writeArray<T, std::rank_v<T>, 0>(val, os);
+            writeArray<T>(val, os);
         else
             writeList<T>(val, os);
     }
     template <bool useDtor>
-    static void setVal(_Clean_T* ptr){
+    static void setVal(auto ptr){
         using T = _Clean_T;
         if constexpr (is_pointer)
             *ptr = new T();
@@ -424,7 +427,7 @@ struct JsonEntry {
         }
     }
     template <bool useDtor, typename... R>
-    static void setVal(_Clean_T* ptr, R&&... args){
+    static void setVal(auto ptr, R&&... args){
         using T = _Clean_T;
         if constexpr (is_pointer)
             *ptr = new T(std::forward<R>(args)...);
@@ -434,7 +437,7 @@ struct JsonEntry {
         }
     }
     template <bool useCtor>
-    static void setVal(_Clean_T* ptr, JsonObject* jobj){
+    static void setVal(auto ptr, JsonObject* jobj){
         using T = _Clean_T;
         if constexpr (is_pointer){
             if constexpr(useCtor)
@@ -451,25 +454,26 @@ struct JsonEntry {
         }
     }
 
-    template<bool useDtor>
+    template<bool useDtor = false>
     static void set(_Class_T* _this, JsonNode* node)
     {
-        using Tp = std::remove_cv_t<_Member_t>;
+        using Tp = std::remove_cv_t<_Member_T>;
         using T  = _Clean_T;
-        T* ptr = getPtr(_this);
+        constexpr bool is_char_ptr = std::is_same_v<T, char> && is_pointer;
+        auto ptr = getPtr(_this);
         switch (node->type) {
             case JsonNode::Value: {
                 switch (((JsonValue*)node)->valueType) {
                     case JsonValue::Bool: {
                         auto jbool = static_cast<JsonBool*>(node);
-                        if constexpr (requires(bool v){ T(v); })
+                        if constexpr (!is_char_ptr && requires(bool v){ T(v); })
                             setVal<useDtor>(ptr, jbool->value);
                         else  throw error::format("Member", key, "is not constructible from bool, found in json entry.");
                         break;
                     }
                     case JsonValue::Number: {
                         auto jnumber = static_cast<JsonNumber*>(node);
-                        if constexpr (requires(int v){ T(v); }){
+                        if constexpr (!is_char_ptr && requires(int v){ T(v); }){
                             if constexpr(std::is_arithmetic_v<T>)
                                 setVal<useDtor>(ptr, jnumber->get<T>());
                             else
@@ -488,7 +492,7 @@ struct JsonEntry {
                         size_t len = jstr->value.size();
                         if constexpr(std::is_same_v<T, char>){
                             if constexpr(is_pointer){
-                                size_t len = jstr->value.data();
+                                size_t len = jstr->value.size();
                                 char* cpy = (char*)malloc(len + 1);
                                 std::memcpy(cpy, jstr->value.data(), len);
                                 *(cpy + len) = '\0';
@@ -538,7 +542,6 @@ struct JsonEntry {
     }
 };
 
-// clang-format on
 
 template <class _Class_T, __JsonEntry<_Class_T>... _Entries>
 struct JsonContext {
@@ -609,40 +612,40 @@ struct JsonContext {
 // clang-format on
 
 #define JSONENTRY(type, mem) , cW::JsonEntry<#mem, &type::mem>
-#define JSONABLE(type, ...)                                                                     \
-    using JsonCtx = cW::JsonContext<type CW_MACRO_FOR_EACH_EX(JSONENTRY, type, __VA_ARGS__)>;   \
-    friend JsonCtx;                                                                             \
-    static inline auto parseJson(JsonNode* jsonNode)                                            \
-    {                                                                                           \
-        if constexpr (std::is_copy_constructible_v<T>)                                          \
-            return JsonCtx::construct(jsonNode);                                                \
-        else                                                                                    \
-            return JsonCtx::construct<true /*Pointer*/>(jsonNode);                              \
-    }                                                                                           \
-    static inline void parseJson(JsonNode* jsonNode, type* _this)                               \
-    {                                                                                           \
-        JsonCtx::construct(jsonNode, _this);                                                    \
-    }                                                                                           \
-    static inline type* fromJson(JsonNode* jsonNode)                                            \
-    {                                                                                           \
-        return JsonCtx::construct<true /*Pointer*/>(jsonNode);                                  \
-    }                                                                                           \
-    inline void writeJson(std::ostream& os = std::cout) const { JsonContext::write(this, os); } \
-    inline std::string toJson() const                                                           \
-    {                                                                                           \
-        std::ostringstream oss;                                                                 \
-        writeJson(oss);                                                                         \
-        return oss.str();                                                                       \
+#define JSONABLE(type, ...)                                                                        \
+    using JsonCtx = cW::JsonContext<type CW_MACRO_FOR_EACH_EX(JSONENTRY, type, __VA_ARGS__)>;      \
+    friend JsonCtx;                                                                                \
+    static inline auto parseJson(cW::JsonNode* jsonNode)                                           \
+    {                                                                                              \
+        if constexpr (std::is_copy_constructible_v<type>)                                          \
+            return JsonCtx::construct(jsonNode);                                                   \
+        else                                                                                       \
+            return JsonCtx::construct<true /*Pointer*/>(jsonNode);                                 \
+    }                                                                                              \
+    static inline void parseJson(cW::JsonNode* jsonNode, type* _this)                              \
+    {                                                                                              \
+        JsonCtx::construct(jsonNode, _this);                                                       \
+    }                                                                                              \
+    static inline type* fromJson(cW::JsonNode* jsonNode)                                           \
+    {                                                                                              \
+        return JsonCtx::construct<true /*Pointer*/>(jsonNode);                                     \
+    }                                                                                              \
+    inline void        writeJson(std::ostream& os = std::cout) const { JsonCtx::write(this, os); } \
+    inline std::string toJson() const                                                              \
+    {                                                                                              \
+        std::ostringstream oss;                                                                    \
+        writeJson(oss);                                                                            \
+        return oss.str();                                                                          \
     }
 #else
 
 struct JsonContext;
-#define JSONABLE(type, ...)                                            \
-  public:                                                              \
-    static inline type  parseJson(JsonNode* jsonNode);                 \
-    static inline type  parseJson(JsonNode* jsonNode, type* _this);    \
-    static inline type* fromJson(JsonNode* jsonNode);                  \
-    inline void         writeJson(std::ostream& os = std::cout) const; \
+#define JSONABLE(type, ...)                                             \
+  public:                                                               \
+    static inline type  parseJson(cW::JsonNode* jsonNode);              \
+    static inline type  parseJson(cW::JsonNode* jsonNode, type* _this); \
+    static inline type* fromJson(cW::JsonNode* jsonNode);               \
+    inline void         writeJson(std::ostream& os = std::cout) const;  \
     inline std::string  toJson() const;
 
 #endif
@@ -651,7 +654,7 @@ struct JsonParser {
 
 #ifdef __cpp_nontype_template_parameter_class
     using error = RuntimeError<"Invalid Json.">;
-#endif;
+#endif
     JsonNode* rootNode = nullptr;
     char*     readBuf  = nullptr;
     JsonParser(const char* data, size_t length);
@@ -678,7 +681,7 @@ size_t JsonParser::skipSpaces(JsonNode* node, const char* data, const size_t len
             case '\n': break;
             default: return i;
         }
-        if (++i >= length) throw error::format(node, "Unexpected end.");
+        if (++i >= length) throw error::formatAndDelete(node, "Unexpected end.");
     }
     return i;
 }
@@ -688,7 +691,7 @@ size_t JsonParser::skipToStringEnd(JsonNode* node, const char* data, const size_
     while (true) {
         if (data[i] == '\"' && !slash) return i;
         slash = data[i] == '\\';
-        if (++i >= length) throw error::format(node, "Unexpected end.");
+        if (++i >= length) throw error::formatAndDelete(node, "Unexpected end.");
     }
 }
 size_t JsonParser::skiptoEnd(JsonNode* node, const char* data, const size_t length, size_t& i)
@@ -703,7 +706,7 @@ size_t JsonParser::skiptoEnd(JsonNode* node, const char* data, const size_t leng
             case ']': return i;
             default: break;
         }
-        if (++i >= length) throw error::format(node, "Unexpected end.");
+        if (++i >= length) throw error::formatAndDelete(node, "Unexpected end.");
     }
 }
 
@@ -749,7 +752,7 @@ _Ret_T JsonNode::get(const std::string_view& path)
                         }
                         case JsonValue::String: {
                             auto jstr = static_cast<JsonString*>(this);
-                            size_t len = jstr->value.data();
+                            size_t len = jstr->value.size();
                             if constexpr(std::is_same_v<T, char>){
                                 if constexpr(is_pointer){
                                     size_t len = jstr->value.size();
@@ -787,9 +790,10 @@ _Ret_T JsonNode::get(const std::string_view& path)
                     return node->elements;
                 else if constexpr (__JsonReturnArray<T>) {
                     size_t len = node->elements.size();
+                    T arr;
                     arr.resize(len);
                     for (size_t i = 0; i < len; i++) {
-                        arr[i] = node->elements[i]->get<std::remove_cvref_t<decltype(arr[0])>>("");
+                        arr[i] = node->elements[i]->get<std::remove_cvref_t<decltype(arr[0])>>();
                     }
                     return arr;
                 }

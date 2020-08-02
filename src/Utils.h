@@ -26,20 +26,15 @@ constexpr bool is_specialization_v = false;
 template <template <typename...> class T, typename... R>
 constexpr bool is_specialization_v<T<R...>, T> = true;
 
-template <typename T1, typename T2>
-struct __mem_pointer_t {
-    using _Class_T  = T1;
-    using _Member_T = T2;
-    constexpr __mem_pointer_t(T2 T1::*) {}
+template <typename>
+struct mem_ptr_t {
 };
 
-// clang-format off
-template <auto _member_ptr>
-    requires std::is_member_pointer_v<decltype(_member_ptr)> 
-using member_pointer_class_t = decltype(__mem_pointer_t(_member_ptr))::_Class_T;
-template <auto _member_ptr>
-    requires std::is_member_pointer_v<decltype(_member_ptr)> 
-using member_pointer_member_t = decltype(__mem_pointer_t(_member_ptr))::_Member_T;
+template <typename _Class_T, typename _Member_T>
+struct mem_ptr_t<_Member_T _Class_T::*> {
+    using ClassT  = _Class_T;
+    using MemberT = _Member_T;
+};
 
 // clang-format on
 
@@ -208,6 +203,11 @@ void generate_macro_foreach_header(unsigned int max_item_count);
 template <unsigned N>
 struct FixedString {
     char buf[N + 1]{};
+    constexpr FixedString(const FixedString& other)
+    {
+        for (unsigned int i = 0; i != N; ++i)
+            buf[i] = other.buf[i];
+    }
     constexpr FixedString(char const* s)
     {
         for (unsigned int i = 0; i != N; ++i)
@@ -218,6 +218,9 @@ struct FixedString {
 
 template <unsigned N>
 FixedString(char const (&)[N])->FixedString<N - 1>;
+
+template <unsigned N>
+FixedString(FixedString<N> other)->FixedString<N>;
 
 template <typename T1, typename T2>
 struct offset_of_impl {

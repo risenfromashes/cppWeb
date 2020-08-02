@@ -14,30 +14,30 @@ JsonNode* JsonParser::parse(const char* data, const size_t length, size_t& i)
             i++;
             bool first = true;
             while (true) {
-                if (i >= length) throw error::format(node, "Missing obj end }");
+                if (i >= length) throw error::formatAndDelete(node, "Missing obj end }");
                 skipSpaces(node, data, length, i);
                 if (data[i] == '}') break;
                 if (first)
                     first = false;
                 else if (data[i++] != ',')
-                    throw error::format(
+                    throw error::formatAndDelete(
                         node, "Missing comma in object at", i, std::string_view(data + i, 5));
                 skipSpaces(node, data, length, i);
                 if (data[i] != '\"')
-                    throw error::format(
+                    throw error::formatAndDelete(
                         node, "No begin quote before key at", i, std::string_view(data + i, 5));
                 size_t entryKeyStart = i;
                 size_t entryKeyEnd   = i + 1;
                 while (data[entryKeyEnd] != '\"')
                     if (++entryKeyEnd >= length)
-                        throw error::format(
+                        throw error::formatAndDelete(
                             node, "No begin quote after key at", i, std::string_view(data + i, 5));
                 std::string_view entryKey =
                     std::string_view(data + entryKeyStart + 1, entryKeyEnd - entryKeyStart - 1);
                 i = entryKeyEnd + 1;
                 skipSpaces(node, data, length, i);
                 if (data[i++] != ':')
-                    throw error::format(
+                    throw error::formatAndDelete(
                         node, "No color after key at", i, std::string_view(data + i, 5));
                 JsonNode* entryNode = parse(data, length, i);
                 node->entries.insert({entryKey, entryNode});
@@ -50,13 +50,13 @@ JsonNode* JsonParser::parse(const char* data, const size_t length, size_t& i)
             i++;
             bool first = true;
             while (true) {
-                if (i >= length) throw error::format(node, "Missing array end ]");
+                if (i >= length) throw error::formatAndDelete(node, "Missing array end ]");
                 skipSpaces(node, data, length, i);
                 if (data[i] == ']') break;
                 if (first)
                     first = false;
                 else if (data[i++] != ',')
-                    throw error::format(
+                    throw error::formatAndDelete(
                         node, "Missing comma in array at", i, std::string_view(data + i, 5));
                 skipSpaces(node, data, length, i);
                 node->elements.push_back(parse(data, length, i));
@@ -79,7 +79,7 @@ JsonNode* JsonParser::parse(const char* data, const size_t length, size_t& i)
                     node = new JsonNumber(data + start);
                 else
                     throw error::format(
-                        nullptr, "Invalid non-string value at", i, std::string_view(data + i, 5));
+                        "Invalid non-string value at", i, std::string_view(data + i, 5));
             }
             else {
                 end  = skipToStringEnd(node, data, length, i);
