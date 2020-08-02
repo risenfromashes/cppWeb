@@ -9,7 +9,7 @@
 #include <concepts>
 #include "macro_foreach_def.h"
 #include <iostream>
-
+#include <vector>
 namespace cW {
 
 #define __INF__ static_cast<size_t>(-1)
@@ -33,12 +33,33 @@ struct __mem_pointer_t {
     constexpr __mem_pointer_t(T2 T1::*) {}
 };
 
+// clang-format off
 template <auto _member_ptr>
-requires std::is_member_pointer_v<decltype(_member_ptr)> using member_pointer_class_t =
-    decltype(__mem_pointer_t_member_ptr)::_Class_T;
+    requires std::is_member_pointer_v<decltype(_member_ptr)> 
+using member_pointer_class_t = decltype(__mem_pointer_t(_member_ptr))::_Class_T;
 template <auto _member_ptr>
-requires std::is_member_pointer_v<decltype(_member_ptr)> using member_pointer_member_t =
-    decltype(__mem_pointer_t_member_ptr)::_Member_T;
+    requires std::is_member_pointer_v<decltype(_member_ptr)> 
+using member_pointer_member_t = decltype(__mem_pointer_t(_member_ptr))::_Member_T;
+
+// clang-format on
+
+template <typename T, bool pointer, typename... R>
+static inline auto createInstance(R... args)
+{
+    if constexpr (pointer)
+        return new T(std::forward<R>(args)...);
+    else
+        return T(std::forward<R>(args)...);
+}
+
+template <typename T, bool pointer>
+static inline auto createInstance()
+{
+    if constexpr (pointer)
+        return new T();
+    else
+        return T();
+}
 
 class Clock {
     static std::chrono::steady_clock::time_point start_time;
