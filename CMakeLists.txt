@@ -25,7 +25,8 @@ FILE(GLOB src_files "src/*.h" "src/*.cpp")
 add_library(cppWeb SHARED ${src_files})
 
 
-add_executable(main main.cpp)
+# add_executable(main main.cpp)
+add_executable(main twitter_test.cpp)
 target_link_libraries(main cppWeb)
 target_include_directories(main PRIVATE 
 # ${include_dir} 

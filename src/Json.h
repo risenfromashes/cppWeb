@@ -71,6 +71,7 @@ concept __JsonVal = std::is_convertible_v<T, const char*> && !std::is_unbounded_
                        requires(clean_t<T> a, const std::string_view& v) { (decltype(a))(v); } || //view of json data
                        requires(clean_t<T> a, int v) { (decltype(a))(v); } || // number or bool
                        requires(clean_t<T> a, JsonNode* v) { a(v); } || // object
+                       std::is_default_constructible_v<clean_t<T>> &&
                        requires(clean_t<T> a, JsonNode* v) { decltype(a)::parseJson(v); } // object
                       ) &&
                       (requires(clean_t<T> val, std::ostream& os) { os << val; } ||
@@ -227,7 +228,7 @@ struct JsonEntry {
     using _Clean_Tp = std::remove_cv_t<_Member_T>;
     using _Clean_T  = clean_t<_Member_T>;
 
-    static constexpr const char* key        = _key;
+    static constexpr const char* key        = _key[0] == '_' ? (const char*) _key + 1: (const char*)_key;
     static constexpr const bool  is_pointer = std::is_pointer_v<_Member_T>;
     
     static inline const _Member_T& get(const _Class_T* _this)
@@ -245,7 +246,7 @@ struct JsonEntry {
     static auto getRef(const T& val)
         -> std::add_lvalue_reference_t<std::add_const_t<std::remove_pointer_t<T>>>
     {
-        if constexpr (is_pointer)
+        if constexpr (std::is_pointer_v<T>)
             return *val;
         else
             return val;
@@ -413,8 +414,10 @@ struct JsonEntry {
             writeVal(val, os);
         else if constexpr (std::is_bounded_array_v<T>)
             writeArray<T>(val, os);
-        else
+        else if constexpr(__JsonArray<T>)
             writeList<T>(val, os);
+        else 
+            throw error::format("Invalid member, shouldn't get here");
     }
     template <bool useDtor>
     static void setVal(auto ptr){
@@ -443,7 +446,7 @@ struct JsonEntry {
             if constexpr(useCtor)
                 *ptr = new T(jobj);
             else
-                *ptr = T::parseJson<true>(jobj);
+                *ptr = T::fromJson(jobj);
         }
         else {
             if constexpr(requires { T::~T(); }) ptr->~T();
@@ -575,7 +578,8 @@ struct JsonContext {
     static void _set(_Class_T* ptr, JsonObject* jsonObject)
     {
         auto itr = jsonObject->entries.find(_entry::key);
-        if (itr != jsonObject->entries.end()) _entry::set(ptr, itr->second);
+        if (itr != jsonObject->entries.end())
+            _entry::set(ptr, itr->second);
         if constexpr (index > 0) _set<index - 1, useDtor, _entries...>(ptr, jsonObject);
     }
     static void write(const _Class_T* ptr, std::ostream& os)
@@ -591,15 +595,15 @@ struct JsonContext {
         if(jsonNode->type != JsonNode::Object) throw error::format("Cannot construct object from non-object json node");
         if constexpr(pointer){
             static std::allocator<_Class_T> allocator;
-            _Class_T* ptr = allocator.allocate(1);
+            _Class_T* ptr = new _Class_T();
             //allocating ourselfves, so no dtor needed
-            _set<entry_count - 1, false, _Entries...>(ptr, (JsonObject*)jsonNode);
+            _set<entry_count - 1, true, _Entries...>(ptr, (JsonObject*)jsonNode);
             return ptr;
         }
         else{
-            U u;
-            _set<entry_count - 1, false, _Entries...>(&u.obj, (JsonObject*)jsonNode);
-            return u.obj;
+            _Class_T obj;
+            _set<entry_count - 1, true, _Entries...>(&obj, (JsonObject*)jsonNode);
+            return obj;
         }
     }
     template<bool useDtor = true>
@@ -612,35 +616,38 @@ struct JsonContext {
 // clang-format on
 
 #define JSONENTRY(type, mem) , cW::JsonEntry<#mem, &type::mem>
-#define JSONABLE(type, ...)                                                                        \
-    using JsonCtx = cW::JsonContext<type CW_MACRO_FOR_EACH_EX(JSONENTRY, type, __VA_ARGS__)>;      \
-    friend JsonCtx;                                                                                \
-    static inline auto parseJson(cW::JsonNode* jsonNode)                                           \
-    {                                                                                              \
-        if constexpr (std::is_copy_constructible_v<type>)                                          \
-            return JsonCtx::construct(jsonNode);                                                   \
-        else                                                                                       \
-            return JsonCtx::construct<true /*Pointer*/>(jsonNode);                                 \
-    }                                                                                              \
-    static inline void parseJson(cW::JsonNode* jsonNode, type* _this)                              \
-    {                                                                                              \
-        JsonCtx::construct(jsonNode, _this);                                                       \
-    }                                                                                              \
-    static inline type* fromJson(cW::JsonNode* jsonNode)                                           \
-    {                                                                                              \
-        return JsonCtx::construct<true /*Pointer*/>(jsonNode);                                     \
-    }                                                                                              \
-    inline void        writeJson(std::ostream& os = std::cout) const { JsonCtx::write(this, os); } \
-    inline std::string toJson() const                                                              \
-    {                                                                                              \
-        std::ostringstream oss;                                                                    \
-        writeJson(oss);                                                                            \
-        return oss.str();                                                                          \
+#define JSONABLE(type)                                                  \
+    struct Json;                                                        \
+    friend struct Json;                                                 \
+    static inline type  parseJson(cW::JsonNode* jsonNode);              \
+    static inline void  parseJson(cW::JsonNode* jsonNode, type* _this); \
+    static inline type* fromJson(cW::JsonNode* jsonNode);               \
+    inline void         writeJson(std::ostream& os = std::cout) const;  \
+    inline std::string  toJson() const;
+#define SET_JSONABLE(type, ...)                                                                   \
+    struct type::Json {                                                                           \
+        using Context = cW::JsonContext<type CW_MACRO_FOR_EACH_EX(JSONENTRY, type, __VA_ARGS__)>; \
+    };                                                                                            \
+    type type::parseJson(cW::JsonNode* jsonNode) { return Json::Context::construct(jsonNode); }   \
+    void type::parseJson(cW::JsonNode* jsonNode, type* _this)                                     \
+    {                                                                                             \
+        Json::Context::construct(jsonNode, _this);                                                \
+    }                                                                                             \
+    type* type::fromJson(cW::JsonNode* jsonNode)                                                  \
+    {                                                                                             \
+        return Json::Context::construct<true /*Pointer*/>(jsonNode);                              \
+    }                                                                                             \
+    void        type::writeJson(std::ostream& os) const { Json::Context::write(this, os); }       \
+    std::string type::toJson() const                                                              \
+    {                                                                                             \
+        std::ostringstream oss;                                                                   \
+        writeJson(oss);                                                                           \
+        return oss.str();                                                                         \
     }
 #else
 
 struct JsonContext;
-#define JSONABLE(type, ...)                                             \
+#define JSONABLE(type)                                                  \
   public:                                                               \
     static inline type  parseJson(cW::JsonNode* jsonNode);              \
     static inline type  parseJson(cW::JsonNode* jsonNode, type* _this); \
@@ -648,6 +655,7 @@ struct JsonContext;
     inline void         writeJson(std::ostream& os = std::cout) const;  \
     inline std::string  toJson() const;
 
+#define SET_JSONABLE(type, ...)
 #endif
 
 struct JsonParser {
@@ -824,7 +832,6 @@ _Ret_T JsonNode::get(const std::string_view& path)
     }
     throw error::format("Invalid path");
 }
-
 
 #endif
 } // namespace cW
